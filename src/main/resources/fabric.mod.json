@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "sync",
+  "version": "${version}",
+  "name": "Sync",
+  "description": "Sync Mod Re Re Ported (Fabric)",
+  "authors": [
+    "Infamous Dragon"
+  ],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/sync/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "net.stacking.sync_mod.Sync"
+    ],
+    "client": [
+      "net.stacking.sync_mod.Sync"
+    ],
+    "modmenu": [
+      "net.stacking.sync_mod.compat.modmenu.ModMenuCompat"
+    ]
+  },
+  "mixins": [
+    "sync.compat.mixins.json",
+    "sync.mixins.json"
+  ],
+  "accessWidener": "sync.accesswidener",
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": ">=${minecraft_version}",
+    "java": ">=21",
+    "geckolib": "*"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "net.stacking.sync_mod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MinecraftServerMixin",
+    "LivingEntityMixin",
+    "PlayerEntityMixin",
+    "ServerPlayerEntityMixin"
+  ],
+  "client": [
+    "EntityMixin",
+    "LivingEntityRendererAccessor",
+    "ClientPlayerEntityMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "EntityRenderDispatcherMixin",
+    "MinecraftClientMixin",
+    "PlayerEntityModelMixin",
+    "WorldRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

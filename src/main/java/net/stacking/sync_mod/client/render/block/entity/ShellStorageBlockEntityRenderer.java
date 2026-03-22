@@ -43,23 +43,30 @@ public class ShellStorageBlockEntityRenderer
                 ? blockEntity.getCachedState()
                 : DEFAULT_STATE;
 
-        // Only render from the LOWER block entity
         if (!AbstractShellContainerBlock.isBottom(state)) return;
 
         Direction facing = state.get(AbstractShellContainerBlock.FACING);
-        float yRotation = facing.asRotation();
+
+        // Match ShellConstructor's rotation scheme exactly
+        float yRot = switch (facing) {
+            case NORTH -> 180f;
+            case SOUTH -> 0f;
+            case WEST -> 90f;
+            case EAST -> 270f;
+            default -> 0f;
+        };
 
         matrices.push();
 
-        // Translate to block center and apply tiny epsilon to prevent Z-fighting
-        matrices.translate(0.5, 0.001, 0.5);
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-yRotation));
+        // SAME ORDER AS SHELL CONSTRUCTOR - this works
+        matrices.translate(0.5, 0.0, 0.5);
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
+        matrices.translate(-0.5, 0.0, -0.5);
 
         super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay);
 
         matrices.pop();
 
-        // Render the stored shell if it exists
         ShellState shellState = blockEntity.getShellState();
         if (shellState != null) {
             renderStoredShell(shellState, blockEntity, tickDelta, matrices, vertexConsumers, light);

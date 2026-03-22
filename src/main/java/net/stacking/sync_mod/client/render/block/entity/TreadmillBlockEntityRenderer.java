@@ -19,7 +19,6 @@ public class TreadmillBlockEntityRenderer
 
     public TreadmillBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
         super(new GeoModel<TreadmillBlockEntity>() {
-
             @Override
             public Identifier getModelResource(TreadmillBlockEntity animatable) {
                 return Identifier.of("sync", "geo/treadmill.geo.json");
@@ -38,41 +37,33 @@ public class TreadmillBlockEntityRenderer
     }
 
     @Override
-    public RenderLayer getRenderType(TreadmillBlockEntity animatable,
-                                     Identifier texture,
-                                     VertexConsumerProvider bufferSource,
-                                     float partialTick) {
+    public RenderLayer getRenderType(TreadmillBlockEntity animatable, Identifier texture,
+                                     VertexConsumerProvider bufferSource, float partialTick) {
         return RenderLayer.getEntityCutoutNoCull(texture);
     }
 
     @Override
-    public void preRender(MatrixStack poseStack,
-                          TreadmillBlockEntity animatable,
-                          BakedGeoModel model,
-                          VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer,
-                          boolean isReRender,
-                          float partialTick,
-                          int packedLight,
-                          int packedOverlay,
-                          int color) {
+    public void preRender(MatrixStack poseStack, TreadmillBlockEntity animatable,
+                          BakedGeoModel model, VertexConsumerProvider bufferSource,
+                          VertexConsumer buffer, boolean isReRender, float partialTick,
+                          int packedLight, int packedOverlay, int color) {
 
         if (!TreadmillBlock.isBack(animatable.getCachedState())) {
             poseStack.scale(0f, 0f, 0f);
             return;
         }
 
-        super.preRender(poseStack, animatable, model, bufferSource, buffer,
-                isReRender, partialTick, packedLight, packedOverlay, color);
+        super.preRender(poseStack, animatable, model, bufferSource, buffer, isReRender,
+                partialTick, packedLight, packedOverlay, color);
 
         Direction facing = animatable.getCachedState().get(TreadmillBlock.FACING);
 
         float yRot = switch (facing) {
             case NORTH -> 180f;
-            case SOUTH ->   0f;
-            case WEST  ->  90f;
-            case EAST  -> 270f;
-            default    ->   0f;
+            case SOUTH -> 0f;
+            case WEST -> 90f;
+            case EAST -> 270f;
+            default -> 0f;
         };
 
         poseStack.translate(0.5, 0.0, 0.5);

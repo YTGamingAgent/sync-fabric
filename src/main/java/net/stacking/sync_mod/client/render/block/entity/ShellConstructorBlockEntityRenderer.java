@@ -60,7 +60,7 @@ public class ShellConstructorBlockEntityRenderer
             case EAST  -> 270f;
             default    ->   0f;
         };
-
+        // Posing
         poseStack.translate(0.5, 0.0, 0.5);
         poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
         poseStack.translate(-0.5, 0.0, -0.5);

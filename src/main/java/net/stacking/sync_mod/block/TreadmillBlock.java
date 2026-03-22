@@ -32,7 +32,6 @@ import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldAccess;
 import net.stacking.sync_mod.block.entity.SyncBlockEntities;
-import net.stacking.sync_mod.block.entity.TickableBlockEntity;
 import net.stacking.sync_mod.block.entity.TreadmillBlockEntity;
 import org.jetbrains.annotations.Nullable;
 
@@ -44,52 +43,35 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     public static final MapCodec<TreadmillBlock> CODEC = createCodec(TreadmillBlock::new);
     public static final EnumProperty<Part> PART = EnumProperty.of("treadmill_part", Part.class);
 
-    // The treadmill model is ~13.5 Blockbench units wide (0.084 blocks of
-    // margin on each side) and roughly 9.5 units tall at the handlebars.
-    // It spans 2 blocks lengthwise (BACK + FRONT).
-    //
-    // Define shapes for FACING=SOUTH and will rotate them via the
-    // FACING direction at runtime. The BACK block contains the standing
-    // platform; the front block is the ramp end.
-
-    private static final VoxelShape SHAPE_BACK_S = VoxelShapes.union(
-            // Main flat belt/frame: full width, low height
+    private static final VoxelShape SHAPE_BACK_SOUTH = VoxelShapes.union(
+            // Belt + side rails (low, spans full block Z)
             Block.createCuboidShape(1, 0, 0, 15, 10, 16),
-            // Handlebar frame at the back (south face when FACING=SOUTH)
-            Block.createCuboidShape(1, 0, 0,  15, 16,  3)
+            // Handlebar uprights (tall, only at the BACK face)
+            Block.createCuboidShape(1, 10, 0,  15, 16,  3)
     );
+    private static final VoxelShape SHAPE_FRONT_SOUTH =
+            Block.createCuboidShape(1, 0, 0, 15, 10, 16);
 
-    // FRONT block: ramp end of the treadmill
-    private static final VoxelShape SHAPE_FRONT_S = VoxelShapes.union(
-            Block.createCuboidShape(1, 0, 0, 15, 10, 16)
+    private static final VoxelShape SHAPE_BACK_NORTH = VoxelShapes.union(
+            Block.createCuboidShape(1, 0, 0,  15, 10, 16),
+            Block.createCuboidShape(1, 10, 13, 15, 16, 16)
     );
+    private static final VoxelShape SHAPE_FRONT_NORTH =
+            Block.createCuboidShape(1, 0, 0, 15, 10, 16);
 
-    // FACING=NORTH (rotated 180°)
-    private static final VoxelShape SHAPE_BACK_N = VoxelShapes.union(
-            Block.createCuboidShape(1, 0, 0, 15, 10, 16),
-            Block.createCuboidShape(1, 0, 13, 15, 16, 16)
-    );
-    private static final VoxelShape SHAPE_FRONT_N = VoxelShapes.union(
-            Block.createCuboidShape(1, 0, 0, 15, 10, 16)
-    );
-
-    // FACING=EAST (model's +Z becomes +X in world)
-    private static final VoxelShape SHAPE_BACK_E = VoxelShapes.union(
+    private static final VoxelShape SHAPE_BACK_EAST = VoxelShapes.union(
             Block.createCuboidShape(0, 0, 1, 16, 10, 15),
-            Block.createCuboidShape(0, 0, 1,  3, 16, 15)
+            Block.createCuboidShape(0, 10, 1,  3, 16, 15)
     );
-    private static final VoxelShape SHAPE_FRONT_E = VoxelShapes.union(
-            Block.createCuboidShape(0, 0, 1, 16, 10, 15)
-    );
+    private static final VoxelShape SHAPE_FRONT_EAST =
+            Block.createCuboidShape(0, 0, 1, 16, 10, 15);
 
-    // FACING=WEST
-    private static final VoxelShape SHAPE_BACK_W = VoxelShapes.union(
+    private static final VoxelShape SHAPE_BACK_WEST = VoxelShapes.union(
             Block.createCuboidShape(0, 0, 1, 16, 10, 15),
-            Block.createCuboidShape(13, 0, 1, 16, 16, 15)
+            Block.createCuboidShape(13, 10, 1, 16, 16, 15)
     );
-    private static final VoxelShape SHAPE_FRONT_W = VoxelShapes.union(
-            Block.createCuboidShape(0, 0, 1, 16, 10, 15)
-    );
+    private static final VoxelShape SHAPE_FRONT_WEST =
+            Block.createCuboidShape(0, 0, 1, 16, 10, 15);
 
     public TreadmillBlock(Settings settings) {
         super(settings);
@@ -99,17 +81,10 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     }
 
     @Override
-    protected MapCodec<TreadmillBlock> getCodec() {
-        return CODEC;
-    }
+    protected MapCodec<TreadmillBlock> getCodec() { return CODEC; }
 
     public static boolean isBack(BlockState state) {
         return state.get(PART) == Part.BACK;
-    }
-
-    public static DoubleBlockProperties.Type getTreadmillPart(BlockState state) {
-        return isBack(state) ? DoubleBlockProperties.Type.FIRST
-                : DoubleBlockProperties.Type.SECOND;
     }
 
     public static Direction getDirectionTowardsOtherPart(Part part, Direction facing) {
@@ -138,14 +113,19 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
         return getShape(state);
     }
 
-    private VoxelShape getShape(BlockState state) {
+    /**
+     * Returns the correct VoxelShape for this block half and facing direction.
+     * Shapes are pre-computed constants — no allocation at render time.
+     */
+    private static VoxelShape getShape(BlockState state) {
         Direction facing = state.get(FACING);
-        Part part = state.get(PART);
+        Part part        = state.get(PART);
+        boolean isBack   = part == Part.BACK;
         return switch (facing) {
-            case SOUTH -> part == Part.BACK ? SHAPE_BACK_S : SHAPE_FRONT_S;
-            case NORTH -> part == Part.BACK ? SHAPE_BACK_N : SHAPE_FRONT_N;
-            case EAST  -> part == Part.BACK ? SHAPE_BACK_E : SHAPE_FRONT_E;
-            case WEST  -> part == Part.BACK ? SHAPE_BACK_W : SHAPE_FRONT_W;
+            case SOUTH -> isBack ? SHAPE_BACK_SOUTH : SHAPE_FRONT_SOUTH;
+            case NORTH -> isBack ? SHAPE_BACK_NORTH : SHAPE_FRONT_NORTH;
+            case EAST  -> isBack ? SHAPE_BACK_EAST  : SHAPE_FRONT_EAST;
+            case WEST  -> isBack ? SHAPE_BACK_WEST  : SHAPE_FRONT_WEST;
             default    -> VoxelShapes.fullCube();
         };
     }
@@ -154,12 +134,10 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Nullable
     public BlockState getPlacementState(ItemPlacementContext ctx) {
         Direction facing = ctx.getHorizontalPlayerFacing().getOpposite();
-        BlockPos pos   = ctx.getBlockPos();
-        BlockPos front = pos.offset(facing);
-        World world    = ctx.getWorld();
-
+        BlockPos pos     = ctx.getBlockPos();
+        BlockPos front   = pos.offset(facing);
+        World world      = ctx.getWorld();
         if (!world.getBlockState(front).canReplace(ctx)) return null;
-
         return this.getDefaultState()
                 .with(FACING, facing)
                 .with(PART, Part.BACK);
@@ -182,18 +160,18 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
                     ? state
                     : Blocks.AIR.getDefaultState();
         }
-        return super.getStateForNeighborUpdate(state, direction, neighborState, world, pos, neighborPos);
+        return super.getStateForNeighborUpdate(state, direction, neighborState,
+                world, pos, neighborPos);
     }
 
     @Override
-    public BlockState onBreak(World world, BlockPos pos, BlockState state,
-                              PlayerEntity player) {
+    public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
         if (!world.isClient) {
-            BlockPos otherPos = pos.offset(getDirectionTowardsOtherPart(
-                    state.get(PART), state.get(FACING)));
-            BlockState otherState = world.getBlockState(otherPos);
+            BlockPos other = pos.offset(
+                    getDirectionTowardsOtherPart(state.get(PART), state.get(FACING)));
+            BlockState otherState = world.getBlockState(other);
             if (otherState.isOf(this) && otherState.get(PART) != state.get(PART)) {
-                world.setBlockState(otherPos, Blocks.AIR.getDefaultState(),
+                world.setBlockState(other, Blocks.AIR.getDefaultState(),
                         Block.NOTIFY_ALL | Block.SKIP_DROPS);
             }
         }
@@ -206,11 +184,10 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
         if (world.isClient) return ActionResult.SUCCESS;
 
         Direction facing = state.get(FACING);
-        Part part = state.get(PART);
+        Part part        = state.get(PART);
         BlockPos backPos = (part == Part.BACK) ? pos : pos.offset(facing.getOpposite());
         BlockState backState = world.getBlockState(backPos);
-        BlockEntity be = world.getBlockEntity(backPos);
-
+        BlockEntity be   = world.getBlockEntity(backPos);
         if (!(be instanceof TreadmillBlockEntity treadmill)) return ActionResult.PASS;
 
         Box search = new Box(backPos).expand(10.0);
@@ -218,8 +195,7 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
                 MobEntity.class, search,
                 m -> m.isLeashed()
                         && m.getLeashHolder() instanceof PlayerEntity lp
-                        && lp.getUuid().equals(player.getUuid())
-        );
+                        && lp.getUuid().equals(player.getUuid()));
         if (mobs.isEmpty()) return ActionResult.PASS;
 
         MobEntity mob = mobs.get(0);
@@ -234,7 +210,6 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
             case NORTH -> backPos.getZ();
             default    -> backPos.getZ() + 0.5D;
         };
-
         mob.updatePositionAndAngles(x, y, z, facing.asRotation(), 0);
         mob.detachLeash(true, false);
         if (!player.isCreative()) {
@@ -247,18 +222,16 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     @Environment(EnvType.CLIENT)
     public void randomDisplayTick(BlockState state, World world, BlockPos pos, Random random) {
-        Part part     = state.get(PART);
+        Part part        = state.get(PART);
         Direction facing = state.get(FACING);
         BlockEntity first  = world.getBlockEntity(pos);
         BlockEntity second = world.getBlockEntity(
                 pos.offset(getDirectionTowardsOtherPart(part, facing)));
-
-        if (!(first instanceof TreadmillBlockEntity firstT)
+        if (!(first  instanceof TreadmillBlockEntity firstT)
                 || !(second instanceof TreadmillBlockEntity secondT)) return;
-
-        TreadmillBlockEntity back = (part == Part.BACK) ? firstT : secondT;
+        TreadmillBlockEntity back  = (part == Part.BACK)  ? firstT  : secondT;
+        TreadmillBlockEntity front = (part == Part.BACK)  ? secondT : firstT;
         if (back.isOverheated()) {
-            TreadmillBlockEntity front = (part == Part.BACK) ? secondT : firstT;
             double x = front.getPos().getX() + random.nextDouble();
             double y = front.getPos().getY() + 0.4;
             double z = front.getPos().getZ() + random.nextDouble();
@@ -286,9 +259,8 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     @Nullable
     @SuppressWarnings("unchecked")
-    public <T extends net.minecraft.block.entity.BlockEntity> BlockEntityTicker<T> getTicker(
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
             World world, BlockState state, BlockEntityType<T> type) {
-        // Only the BACK block's entity is ticked
         if (!isBack(state)) return null;
         if (type != SyncBlockEntities.TREADMILL) return null;
         return (BlockEntityTicker<T>) (BlockEntityTicker<TreadmillBlockEntity>)
@@ -298,17 +270,14 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
                 };
     }
 
-    // ── Part enum ─────────────────────────────────────────────────────────────
-
     public enum Part implements StringIdentifiable {
         FRONT("front"),
         BACK("back");
 
         private final String name;
-
         Part(String name) { this.name = name; }
 
-        @Override public String toString()   { return name; }
-        @Override public String asString()   { return name; }
+        @Override public String toString()  { return name; }
+        @Override public String asString()  { return name; }
     }
 }

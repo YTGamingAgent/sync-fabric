@@ -22,7 +22,6 @@ public class TreadmillBlockEntityRenderer
 
             @Override
             public Identifier getModelResource(TreadmillBlockEntity animatable) {
-                // GeckoLib 4 raw-path geo loading: "sync:geo/treadmill.geo.json"
                 return Identifier.of("sync", "geo/treadmill.geo.json");
             }
 
@@ -33,7 +32,6 @@ public class TreadmillBlockEntityRenderer
 
             @Override
             public Identifier getAnimationResource(TreadmillBlockEntity animatable) {
-                // No animations on the treadmill
                 return null;
             }
         });
@@ -68,6 +66,7 @@ public class TreadmillBlockEntityRenderer
                 isReRender, partialTick, packedLight, packedOverlay, color);
 
         Direction facing = animatable.getCachedState().get(TreadmillBlock.FACING);
+
         float yRot = switch (facing) {
             case NORTH -> 180f;
             case SOUTH ->   0f;

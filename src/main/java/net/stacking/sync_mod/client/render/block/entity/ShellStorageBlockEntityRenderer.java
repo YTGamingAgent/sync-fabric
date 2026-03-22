@@ -1,68 +1,95 @@
 package net.stacking.sync_mod.client.render.block.entity;
 
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
 import net.minecraft.block.BlockState;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.block.enums.DoubleBlockHalf;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
+import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
+import net.stacking.sync_mod.Sync;
+import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.block.AbstractShellContainerBlock;
+import net.stacking.sync_mod.block.SyncBlocks;
 import net.stacking.sync_mod.block.entity.ShellStorageBlockEntity;
-import software.bernie.geckolib.cache.object.BakedGeoModel;
+import net.stacking.sync_mod.entity.ShellEntity;
 import software.bernie.geckolib.model.DefaultedBlockGeoModel;
 import software.bernie.geckolib.renderer.GeoBlockRenderer;
 
+@Environment(EnvType.CLIENT)
 public class ShellStorageBlockEntityRenderer
         extends GeoBlockRenderer<ShellStorageBlockEntity> {
 
+    private static final BlockState DEFAULT_STATE = SyncBlocks.SHELL_STORAGE
+            .getDefaultState()
+            .with(AbstractShellContainerBlock.HALF,   DoubleBlockHalf.LOWER)
+            .with(AbstractShellContainerBlock.FACING, Direction.SOUTH)
+            .with(AbstractShellContainerBlock.OPEN,   false);
+
     public ShellStorageBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
-        super(new DefaultedBlockGeoModel<>(Identifier.of("sync", "shell_storage")));
+        super(new DefaultedBlockGeoModel<>(Sync.locate("shell_storage")));
     }
 
     @Override
-    public RenderLayer getRenderType(ShellStorageBlockEntity animatable,
-                                     Identifier texture,
-                                     VertexConsumerProvider bufferSource,
-                                     float partialTick) {
-        return RenderLayer.getEntityTranslucent(texture);
-    }
+    public void render(ShellStorageBlockEntity blockEntity, float tickDelta,
+                       MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+                       int light, int overlay) {
 
-    @Override
-    public void preRender(MatrixStack poseStack,
-                          ShellStorageBlockEntity animatable,
-                          BakedGeoModel model,
-                          VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer,
-                          boolean isReRender,
-                          float partialTick,
-                          int packedLight,
-                          int packedOverlay,
-                          int color) {
+        BlockState state = blockEntity.hasWorld()
+                ? blockEntity.getCachedState()
+                : DEFAULT_STATE;
 
-        if (!AbstractShellContainerBlock.isBottom(animatable.getCachedState())) {
-            poseStack.scale(0f, 0f, 0f);
-            return;
+        // Only render from the LOWER block entity
+        if (!AbstractShellContainerBlock.isBottom(state)) return;
+
+        Direction facing = state.get(AbstractShellContainerBlock.FACING);
+        float yRotation = facing.asRotation();
+
+        matrices.push();
+
+        // Translate to block center and apply tiny epsilon to prevent Z-fighting
+        matrices.translate(0.5, 0.001, 0.5);
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-yRotation));
+
+        super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay);
+
+        matrices.pop();
+
+        // Render the stored shell if it exists
+        ShellState shellState = blockEntity.getShellState();
+        if (shellState != null) {
+            renderStoredShell(shellState, blockEntity, tickDelta, matrices, vertexConsumers, light);
         }
+    }
 
-        super.preRender(poseStack, animatable, model, bufferSource, buffer,
-                isReRender, partialTick, packedLight, packedOverlay, color);
+    private void renderStoredShell(ShellState shellState,
+                                   ShellStorageBlockEntity blockEntity,
+                                   float tickDelta,
+                                   MatrixStack matrices,
+                                   VertexConsumerProvider vertexConsumers,
+                                   int light) {
+        BlockState blockState = blockEntity.hasWorld()
+                ? blockEntity.getCachedState()
+                : DEFAULT_STATE;
 
-        Direction facing = animatable.getCachedState()
-                .get(AbstractShellContainerBlock.FACING);
+        float yaw = blockState.get(AbstractShellContainerBlock.FACING)
+                .getOpposite().asRotation();
 
-        float yRot = switch (facing) {
-            case NORTH -> 180f;
-            case SOUTH ->   0f;
-            case WEST  ->  90f;
-            case EAST  -> 270f;
-            default    ->   0f;
-        };
+        ShellEntity shellEntity = shellState.asEntity();
+        shellEntity.isActive      = shellState.getProgress() >= ShellState.PROGRESS_DONE;
+        shellEntity.pitchProgress = shellEntity.isActive
+                ? blockEntity.getConnectorProgress(tickDelta)
+                : 0;
 
-        poseStack.translate(0.5, 0.0, 0.5);
-        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
-        poseStack.translate(-0.5, 0.0, -0.5);
+        EntityRenderer<? super ShellEntity> renderer =
+                MinecraftClient.getInstance()
+                        .getEntityRenderDispatcher()
+                        .getRenderer(shellEntity);
+
+        renderer.render(shellEntity, yaw, tickDelta, matrices, vertexConsumers, light);
     }
 }

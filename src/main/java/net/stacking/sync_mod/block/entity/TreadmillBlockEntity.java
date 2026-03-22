@@ -151,7 +151,8 @@ public class TreadmillBlockEntity extends BlockEntity
 
     @Override
     public DoubleBlockProperties.Type getBlockType(BlockState state) {
-        return TreadmillBlock.getTreadmillPart(state);
+        return state.get(TreadmillBlock.PART) == TreadmillBlock.Part.BACK ?
+                DoubleBlockProperties.Type.FIRST : DoubleBlockProperties.Type.SECOND;
     }
 
     // NBT

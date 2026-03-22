@@ -6,14 +6,22 @@
 			"bones": {
 				"door_left_bone": {
 					"rotation": {
-						"0.0": { "vector": [0,   0, 0] },
-						"0.5": { "vector": [0, -90, 0] }
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"0.5": {
+							"vector": [0, 90, 0]
+						}
 					}
 				},
 				"door_right_bone": {
 					"rotation": {
-						"0.0": { "vector": [0,  0, 0] },
-						"0.5": { "vector": [0, 90, 0] }
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"0.5": {
+							"vector": [0, -90, 0]
+						}
 					}
 				}
 			}
@@ -23,14 +31,22 @@
 			"bones": {
 				"door_left_bone": {
 					"rotation": {
-						"0.0": { "vector": [0, -90, 0] },
-						"0.5": { "vector": [0,   0, 0] }
+						"0.0": {
+							"vector": [0, 90, 0]
+						},
+						"0.5": {
+							"vector": [0, 0, 0]
+						}
 					}
 				},
 				"door_right_bone": {
 					"rotation": {
-						"0.0": { "vector": [0, 90, 0] },
-						"0.5": { "vector": [0,  0, 0] }
+						"0.0": {
+							"vector": [0, -90, 0]
+						},
+						"0.5": {
+							"vector": [0, 0, 0]
+						}
 					}
 				}
 			}
@@ -40,20 +56,32 @@
 			"bones": {
 				"shoulder_left": {
 					"rotation": {
-						"0.0": { "vector": [0,  90, 0] },
-						"1.5": { "vector": [0,   0, 0] }
+						"0.0": {
+							"vector": [0, 90, 0]
+						},
+						"1.5": {
+							"vector": [0, 0, 0]
+						}
 					}
 				},
 				"shoulder_right": {
 					"rotation": {
-						"0.0": { "vector": [0, -90, 0] },
-						"1.5": { "vector": [0,   0, 0] }
+						"0.0": {
+							"vector": [0, -90, 0]
+						},
+						"1.5": {
+							"vector": [0, 0, 0]
+						}
 					}
 				},
 				"head_jack": {
 					"position": {
-						"0.0": { "vector": [0,  0, 0] },
-						"2.5": { "vector": [0, -3, 0] }
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"2.5": {
+							"vector": [0, -3, 0]
+						}
 					}
 				}
 			}
@@ -63,20 +91,32 @@
 			"bones": {
 				"shoulder_left": {
 					"rotation": {
-						"1.5": { "vector": [0,   0, 0] },
-						"3.0": { "vector": [0,  90, 0] }
+						"1.5": {
+							"vector": [0, 0, 0]
+						},
+						"3.0": {
+							"vector": [0, 90, 0]
+						}
 					}
 				},
 				"shoulder_right": {
 					"rotation": {
-						"1.5": { "vector": [0,   0, 0] },
-						"3.0": { "vector": [0, -90, 0] }
+						"1.5": {
+							"vector": [0, 0, 0]
+						},
+						"3.0": {
+							"vector": [0, -90, 0]
+						}
 					}
 				},
 				"head_jack": {
 					"position": {
-						"0.0": { "vector": [0, -3, 0] },
-						"0.5": { "vector": [0,  0, 0] }
+						"0.0": {
+							"vector": [0, -3, 0]
+						},
+						"0.5": {
+							"vector": [0, 0, 0]
+						}
 					}
 				}
 			}

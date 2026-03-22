@@ -1,5 +1,6 @@
 package net.stacking.sync_mod.client.render.block.entity;
 
+import net.minecraft.block.BlockState;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -18,7 +19,6 @@ public class ShellStorageBlockEntityRenderer
         extends GeoBlockRenderer<ShellStorageBlockEntity> {
 
     public ShellStorageBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
-        // Mod assets are under assets/sync/ not assets/sync_mod/
         super(new DefaultedBlockGeoModel<>(Identifier.of("sync", "shell_storage")));
     }
 
@@ -42,6 +42,11 @@ public class ShellStorageBlockEntityRenderer
                           int packedOverlay,
                           int color) {
 
+        if (!AbstractShellContainerBlock.isBottom(animatable.getCachedState())) {
+            poseStack.scale(0f, 0f, 0f);
+            return;
+        }
+
         super.preRender(poseStack, animatable, model, bufferSource, buffer,
                 isReRender, partialTick, packedLight, packedOverlay, color);
 
@@ -50,10 +55,10 @@ public class ShellStorageBlockEntityRenderer
 
         float yRot = switch (facing) {
             case NORTH -> 180f;
-            case SOUTH -> 0f;
-            case WEST  -> 90f;
+            case SOUTH ->   0f;
+            case WEST  ->  90f;
             case EAST  -> 270f;
-            default    -> 0f;
+            default    ->   0f;
         };
 
         poseStack.translate(0.5, 0.0, 0.5);

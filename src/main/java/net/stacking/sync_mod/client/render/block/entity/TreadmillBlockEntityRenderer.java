@@ -18,10 +18,11 @@ public class TreadmillBlockEntityRenderer
         extends GeoBlockRenderer<TreadmillBlockEntity> {
 
     public TreadmillBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
-        super(new GeoModel<>() {
+        super(new GeoModel<TreadmillBlockEntity>() {
+
             @Override
             public Identifier getModelResource(TreadmillBlockEntity animatable) {
-                // File is at assets/sync/geo/treadmill.geo.json (NOT in geo/block/)
+                // GeckoLib 4 raw-path geo loading: "sync:geo/treadmill.geo.json"
                 return Identifier.of("sync", "geo/treadmill.geo.json");
             }
 
@@ -32,7 +33,8 @@ public class TreadmillBlockEntityRenderer
 
             @Override
             public Identifier getAnimationResource(TreadmillBlockEntity animatable) {
-                return null; // No animations for treadmill
+                // No animations on the treadmill
+                return null;
             }
         });
     }
@@ -57,18 +59,21 @@ public class TreadmillBlockEntityRenderer
                           int packedOverlay,
                           int color) {
 
+        if (!TreadmillBlock.isBack(animatable.getCachedState())) {
+            poseStack.scale(0f, 0f, 0f);
+            return;
+        }
+
         super.preRender(poseStack, animatable, model, bufferSource, buffer,
                 isReRender, partialTick, packedLight, packedOverlay, color);
 
-        Direction facing = animatable.getCachedState()
-                .get(TreadmillBlock.FACING);
-
+        Direction facing = animatable.getCachedState().get(TreadmillBlock.FACING);
         float yRot = switch (facing) {
             case NORTH -> 180f;
-            case SOUTH -> 0f;
-            case WEST  -> 90f;
+            case SOUTH ->   0f;
+            case WEST  ->  90f;
             case EAST  -> 270f;
-            default    -> 0f;
+            default    ->   0f;
         };
 
         poseStack.translate(0.5, 0.0, 0.5);

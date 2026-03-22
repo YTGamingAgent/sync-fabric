@@ -151,12 +151,21 @@ public abstract class AbstractShellContainerBlockEntity extends BlockEntity impl
     private void updateShell(boolean isNew, boolean partialUpdate) {
         ShellStateManager shellManager = this.getShellStateManager();
         if (isNew) {
-            shellManager.remove(this.syncedShell);
-            shellManager.add(this.shell);
+            if (this.syncedShell != null) {
+                shellManager.remove(this.syncedShell);
+            }
+            // Only add the new shell if it actually exists.
+            if (this.shell != null) {
+                shellManager.add(this.shell);
+            }
         } else if (partialUpdate) {
-            shellManager.update(this.shell);
+            if (this.shell != null) {
+                shellManager.update(this.shell);
+            }
         } else {
-            shellManager.add(this.shell);
+            if (this.shell != null) {
+                shellManager.add(this.shell);
+            }
         }
     }
 

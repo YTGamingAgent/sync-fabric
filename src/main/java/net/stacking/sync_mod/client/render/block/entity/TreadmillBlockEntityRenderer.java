@@ -39,36 +39,41 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
         return RenderLayer.getEntityCutoutNoCull(texture);
     }
 
-    @Override
-    public void preRender(MatrixStack poseStack, TreadmillBlockEntity animatable,
-                          BakedGeoModel model, VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer, boolean isReRender, float partialTick,
-                          int packedLight, int packedOverlay, int color) {
+    // -----------------------------------------------------------------------
+    // Treadmill model: root pivot at [0,0,0], cubes X:-6.75..+6.75, Z:-8..+24.
+    // Belt runs toward +Z (SOUTH) in Blockbench.
+    // Net transform needed: translate(0.5,0,0.5) + rotateY(facing.asRotation())
+    //   SOUTH 0°  → belt faces +Z = SOUTH ✓
+    //   WEST  90° → belt faces -X = WEST  ✓
+    //   NORTH 180°→ belt faces -Z = NORTH ✓
+    //   EAST  270°→ belt faces +X = EAST  ✓
+    // -----------------------------------------------------------------------
 
-        // Scale to 0 on the FRONT block — only BACK renders the full model.
+    @Override
+    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
+        // Intentionally empty — rotation handled in preRender().
+    }
+
+    @Override
+    public void preRender(MatrixStack poseStack,
+                          TreadmillBlockEntity animatable,
+                          BakedGeoModel model,
+                          VertexConsumerProvider bufferSource,
+                          VertexConsumer buffer,
+                          boolean isReRender,
+                          float partialTick,
+                          int packedLight,
+                          int packedOverlay,
+                          int color) {
+
         if (!TreadmillBlock.isBack(animatable.getCachedState())) {
             poseStack.scale(0f, 0f, 0f);
             return;
         }
 
-        super.preRender(poseStack, animatable, model, bufferSource, buffer,
-                isReRender, partialTick, packedLight, packedOverlay, color);
-
         Direction facing = animatable.getCachedState().get(TreadmillBlock.FACING);
 
-        // Treadmill geo model spans Z: -8..+24 Blockbench units (= -0.5..+1.5 blocks).
-        // The model origin [0,0,0] maps to the BACK block's centre in Minecraft.
-        // Correct transform: shift to block centre then rotate — no un-translate needed.
-        float yRot = switch (facing) {
-            case NORTH -> 180f;
-            case SOUTH ->   0f;
-            case WEST  ->  90f;
-            case EAST  -> 270f;
-            default    ->   0f;
-        };
-
         poseStack.translate(0.5, 0.0, 0.5);
-        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
-        // NO translate(-0.5, 0, -0.5) — that was the source of the offset bug.
+        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(facing.asRotation()));
     }
 }

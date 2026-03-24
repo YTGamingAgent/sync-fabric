@@ -13,7 +13,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
-import net.stacking.sync_mod.Sync;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.block.AbstractShellContainerBlock;
 import net.stacking.sync_mod.block.SyncBlocks;
@@ -45,6 +44,11 @@ public class ShellStorageBlockEntityRenderer
     }
 
     @Override
+    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
+        // Intentionally empty — rotation handled entirely in preRender().
+    }
+
+    @Override
     public void preRender(MatrixStack poseStack,
                           ShellStorageBlockEntity animatable,
                           BakedGeoModel model,
@@ -68,8 +72,14 @@ public class ShellStorageBlockEntityRenderer
             return;
         }
 
-        super.preRender(poseStack, animatable, model, bufferSource, buffer,
-                isReRender, partialTick, packedLight, packedOverlay, color);
+        if (!animatable.hasWorld()) {
+            // Hotbar / inventory item rendering — same angle as constructor.
+            poseStack.translate(0.5, 0.15, 0.5);
+            poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(225f));
+            poseStack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(30f));
+            poseStack.scale(0.4f, 0.4f, 0.4f);
+            return;
+        }
 
         Direction facing = state.get(AbstractShellContainerBlock.FACING);
         float yRot = 180f - facing.asRotation();
@@ -82,7 +92,6 @@ public class ShellStorageBlockEntityRenderer
     public void render(ShellStorageBlockEntity blockEntity, float tickDelta,
                        MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                        int light, int overlay) {
-
         super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay);
 
         if (!blockEntity.hasWorld()) return;
@@ -90,16 +99,15 @@ public class ShellStorageBlockEntityRenderer
         if (!AbstractShellContainerBlock.isBottom(state)) return;
 
         ShellState shellState = blockEntity.getShellState();
-        if (shellState != null) {
-            float yaw = state.get(AbstractShellContainerBlock.FACING).getOpposite().asRotation();
-            ShellEntity shellEntity = shellState.asEntity();
-            shellEntity.isActive      = shellState.getProgress() >= ShellState.PROGRESS_DONE;
-            shellEntity.pitchProgress = shellEntity.isActive
-                    ? blockEntity.getConnectorProgress(tickDelta)
-                    : 0;
-            EntityRenderer<? super ShellEntity> renderer =
-                    MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shellEntity);
-            renderer.render(shellEntity, yaw, tickDelta, matrices, vertexConsumers, light);
-        }
+        if (shellState == null) return;
+
+        float yaw = state.get(AbstractShellContainerBlock.FACING).getOpposite().asRotation();
+        ShellEntity shellEntity = shellState.asEntity();
+        shellEntity.isActive      = shellState.getProgress() >= ShellState.PROGRESS_DONE;
+        shellEntity.pitchProgress = shellEntity.isActive
+                ? blockEntity.getConnectorProgress(tickDelta) : 0;
+        EntityRenderer<? super ShellEntity> renderer =
+                MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shellEntity);
+        renderer.render(shellEntity, yaw, tickDelta, matrices, vertexConsumers, light);
     }
 }

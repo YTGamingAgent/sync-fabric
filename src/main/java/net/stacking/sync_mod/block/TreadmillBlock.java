@@ -43,31 +43,32 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     public static final MapCodec<TreadmillBlock> CODEC = createCodec(TreadmillBlock::new);
     public static final EnumProperty<Part> PART = EnumProperty.of("treadmill_part", Part.class);
 
-    // ── Collision shapes (physical — what you stand on / bump into) ─────────────
-    // Belt surface at 8/16 = 0.5 blocks tall.  Minecraft's step-up threshold is
-    // 0.6 blocks, so a player or animal walking up to the treadmill steps straight
-    // onto the belt without needing to jump.  The handlebar console is intentionally
-    // excluded from collision so it does not block the runner.
     private static final VoxelShape COL_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
     private static final VoxelShape COL_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
 
     // ── Outline shapes (selection highlight — includes handlebar on BACK half) ──
+    // BACK half: belt box + handlebar console box
     private static final VoxelShape OUTLINE_BACK_SOUTH = VoxelShapes.union(
             Block.createCuboidShape(1, 0, 0, 15, 8, 16),
-            Block.createCuboidShape(1, 8, 0, 15, 16, 3)
+            Block.createCuboidShape(1, 8, 0, 15, 16, 3)   // handlebar at north face of BACK block
     );
     private static final VoxelShape OUTLINE_BACK_NORTH = VoxelShapes.union(
             Block.createCuboidShape(1, 0, 0, 15, 8, 16),
-            Block.createCuboidShape(1, 8, 13, 15, 16, 16)
+            Block.createCuboidShape(1, 8, 13, 15, 16, 16) // handlebar at south face of BACK block
     );
     private static final VoxelShape OUTLINE_BACK_EAST = VoxelShapes.union(
             Block.createCuboidShape(0, 0, 1, 16, 8, 15),
-            Block.createCuboidShape(0, 8, 1, 3, 16, 15)
+            Block.createCuboidShape(0, 8, 1, 3, 16, 15)   // handlebar at west face of BACK block
     );
     private static final VoxelShape OUTLINE_BACK_WEST = VoxelShapes.union(
             Block.createCuboidShape(0, 0, 1, 16, 8, 15),
-            Block.createCuboidShape(13, 8, 1, 16, 16, 15)
+            Block.createCuboidShape(13, 8, 1, 16, 16, 15) // handlebar at east face of BACK block
     );
+
+    // ── FRONT half outline: belt only, no handlebars ─────────────────────────
+    // These are separate constants so they stay decoupled from the collision shapes.
+    private static final VoxelShape OUTLINE_FRONT_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
+    private static final VoxelShape OUTLINE_FRONT_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
 
     public TreadmillBlock(Settings settings) {
         super(settings);
@@ -77,7 +78,9 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     }
 
     @Override
-    protected MapCodec<TreadmillBlock> getCodec() { return CODEC; }
+    protected MapCodec<TreadmillBlock> getCodec() {
+        return CODEC;
+    }
 
     public static boolean isBack(BlockState state) {
         return state.get(PART) == Part.BACK;
@@ -98,10 +101,11 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     }
 
     @Override
-    protected VoxelShape getOutlineShape(BlockState state, BlockView world,
-                                         BlockPos pos, ShapeContext context) {
+    protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         Direction facing = state.get(FACING);
+
         if (state.get(PART) == Part.BACK) {
+            // BACK block: belt + handlebar console
             return switch (facing) {
                 case SOUTH -> OUTLINE_BACK_SOUTH;
                 case NORTH -> OUTLINE_BACK_NORTH;
@@ -110,13 +114,15 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
                 default    -> OUTLINE_BACK_SOUTH;
             };
         }
-        // FRONT half — belt only, no handlebars
-        return (facing == Direction.EAST || facing == Direction.WEST) ? COL_EW : COL_NS;
+
+        // FRONT block: belt-only outline — NO handlebar
+        return (facing == Direction.EAST || facing == Direction.WEST)
+                ? OUTLINE_FRONT_EW
+                : OUTLINE_FRONT_NS;
     }
 
     @Override
-    protected VoxelShape getCollisionShape(BlockState state, BlockView world,
-                                           BlockPos pos, ShapeContext context) {
+    protected VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         // Belt only — handlebars are purely visual and never block movement.
         Direction facing = state.get(FACING);
         return (facing == Direction.EAST || facing == Direction.WEST) ? COL_EW : COL_NS;
@@ -126,9 +132,9 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Nullable
     public BlockState getPlacementState(ItemPlacementContext ctx) {
         Direction facing = ctx.getHorizontalPlayerFacing().getOpposite();
-        BlockPos pos     = ctx.getBlockPos();
-        BlockPos front   = pos.offset(facing);
-        World world      = ctx.getWorld();
+        BlockPos pos = ctx.getBlockPos();
+        BlockPos front = pos.offset(facing);
+        World world = ctx.getWorld();
         if (!world.getBlockState(front).canReplace(ctx)) return null;
         return this.getDefaultState()
                 .with(FACING, facing)
@@ -139,8 +145,7 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     public void onPlaced(World world, BlockPos pos, BlockState state,
                          @Nullable LivingEntity placer, ItemStack stack) {
         Direction facing = state.get(FACING);
-        world.setBlockState(pos.offset(facing),
-                state.with(PART, Part.FRONT), 3);
+        world.setBlockState(pos.offset(facing), state.with(PART, Part.FRONT), 3);
     }
 
     @Override
@@ -152,15 +157,13 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
                     ? state
                     : Blocks.AIR.getDefaultState();
         }
-        return super.getStateForNeighborUpdate(state, direction, neighborState,
-                world, pos, neighborPos);
+        return super.getStateForNeighborUpdate(state, direction, neighborState, world, pos, neighborPos);
     }
 
     @Override
     public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
         if (!world.isClient) {
-            BlockPos other = pos.offset(
-                    getDirectionTowardsOtherPart(state.get(PART), state.get(FACING)));
+            BlockPos other = pos.offset(getDirectionTowardsOtherPart(state.get(PART), state.get(FACING)));
             BlockState otherState = world.getBlockState(other);
             if (otherState.isOf(this) && otherState.get(PART) != state.get(PART)) {
                 world.setBlockState(other, Blocks.AIR.getDefaultState(),
@@ -176,25 +179,25 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
         if (world.isClient) return ActionResult.SUCCESS;
 
         Direction facing = state.get(FACING);
-        Part part        = state.get(PART);
+        Part part = state.get(PART);
         BlockPos backPos = (part == Part.BACK) ? pos : pos.offset(facing.getOpposite());
         BlockState backState = world.getBlockState(backPos);
-        BlockEntity be   = world.getBlockEntity(backPos);
+        BlockEntity be = world.getBlockEntity(backPos);
         if (!(be instanceof TreadmillBlockEntity treadmill)) return ActionResult.PASS;
 
         Box search = new Box(backPos).expand(10.0);
         List<MobEntity> mobs = world.getEntitiesByClass(
                 MobEntity.class, search,
-                m -> m.isLeashed()
-                        && m.getLeashHolder() instanceof PlayerEntity lp
+                m -> m.isLeashed() && m.getLeashHolder() instanceof PlayerEntity lp
                         && lp.getUuid().equals(player.getUuid()));
-        if (mobs.isEmpty()) return ActionResult.PASS;
 
+        if (mobs.isEmpty()) return ActionResult.PASS;
         MobEntity mob = mobs.get(0);
+
         double x = switch (facing) {
-            case WEST  -> backPos.getX();
-            case EAST  -> backPos.getX() + 1;
-            default    -> backPos.getX() + 0.5D;
+            case WEST -> backPos.getX();
+            case EAST -> backPos.getX() + 1;
+            default   -> backPos.getX() + 0.5D;
         };
         double y = backPos.getY() + 0.175;
         double z = switch (facing) {
@@ -202,6 +205,7 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
             case NORTH -> backPos.getZ();
             default    -> backPos.getZ() + 0.5D;
         };
+
         mob.updatePositionAndAngles(x, y, z, facing.asRotation(), 0);
         mob.detachLeash(true, false);
         if (!player.isCreative()) {
@@ -214,15 +218,16 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     @Environment(EnvType.CLIENT)
     public void randomDisplayTick(BlockState state, World world, BlockPos pos, Random random) {
-        Part part        = state.get(PART);
+        Part part = state.get(PART);
         Direction facing = state.get(FACING);
-        BlockEntity first  = world.getBlockEntity(pos);
-        BlockEntity second = world.getBlockEntity(
-                pos.offset(getDirectionTowardsOtherPart(part, facing)));
-        if (!(first  instanceof TreadmillBlockEntity firstT)
+        BlockEntity first = world.getBlockEntity(pos);
+        BlockEntity second = world.getBlockEntity(pos.offset(getDirectionTowardsOtherPart(part, facing)));
+        if (!(first instanceof TreadmillBlockEntity firstT)
                 || !(second instanceof TreadmillBlockEntity secondT)) return;
-        TreadmillBlockEntity back  = (part == Part.BACK)  ? firstT  : secondT;
+
+        TreadmillBlockEntity back  = (part == Part.BACK)  ? firstT : secondT;
         TreadmillBlockEntity front = (part == Part.BACK)  ? secondT : firstT;
+
         if (back.isOverheated()) {
             double x = front.getPos().getX() + random.nextDouble();
             double y = front.getPos().getY() + 0.4;
@@ -263,13 +268,13 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     }
 
     public enum Part implements StringIdentifiable {
-        FRONT("front"),
-        BACK("back");
+        FRONT("front"), BACK("back");
 
         private final String name;
+
         Part(String name) { this.name = name; }
 
-        @Override public String toString()  { return name; }
-        @Override public String asString()  { return name; }
+        @Override public String toString()   { return name; }
+        @Override public String asString()   { return name; }
     }
 }

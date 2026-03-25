@@ -37,6 +37,7 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
         return RenderLayer.getEntityCutoutNoCull(texture);
     }
 
+    // Suppress GeckoLib's built-in block rotation — we handle it ourselves below.
     @Override
     protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
 
@@ -49,22 +50,20 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
 
         BlockState state = animatable.getCachedState();
 
+        // FRONT block renders nothing — the BACK block draws the full 2-block model.
         if (!TreadmillBlock.isBack(state)) {
             poseStack.scale(0f, 0f, 0f);
             return;
         }
 
-        // Item rendering: JSON gui transform already applied — just centre.
+        // Item / inventory rendering — no world context, just center it.
         if (!animatable.hasWorld()) {
             poseStack.translate(0.5, 0.0, 0.5);
             return;
         }
 
-        // World rendering: centre + rotate.
-        // Belt runs toward +Z (SOUTH) in Blockbench → facing.asRotation() is correct:
-        //   SOUTH=0°, WEST=90°, NORTH=180°, EAST=270°
         Direction facing = state.get(TreadmillBlock.FACING);
         poseStack.translate(0.5, 0.0, 0.5);
-        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(facing.asRotation()));
+        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-facing.asRotation()));
     }
 }

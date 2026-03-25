@@ -1,5 +1,6 @@
 package net.stacking.sync_mod.client.render.block.entity;
 
+import net.minecraft.block.BlockState;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -18,16 +19,13 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
 
     public TreadmillBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
         super(new GeoModel<TreadmillBlockEntity>() {
-            @Override
-            public Identifier getModelResource(TreadmillBlockEntity animatable) {
+            @Override public Identifier getModelResource(TreadmillBlockEntity a) {
                 return Identifier.of("sync", "geo/treadmill.geo.json");
             }
-            @Override
-            public Identifier getTextureResource(TreadmillBlockEntity animatable) {
+            @Override public Identifier getTextureResource(TreadmillBlockEntity a) {
                 return Identifier.of("sync", "textures/block/treadmill.png");
             }
-            @Override
-            public Identifier getAnimationResource(TreadmillBlockEntity animatable) {
+            @Override public Identifier getAnimationResource(TreadmillBlockEntity a) {
                 return null;
             }
         });
@@ -39,40 +37,33 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
         return RenderLayer.getEntityCutoutNoCull(texture);
     }
 
-    // -----------------------------------------------------------------------
-    // Treadmill model: root pivot at [0,0,0], cubes X:-6.75..+6.75, Z:-8..+24.
-    // Belt runs toward +Z (SOUTH) in Blockbench.
-    // Net transform needed: translate(0.5,0,0.5) + rotateY(facing.asRotation())
-    //   SOUTH 0°  → belt faces +Z = SOUTH ✓
-    //   WEST  90° → belt faces -X = WEST  ✓
-    //   NORTH 180°→ belt faces -Z = NORTH ✓
-    //   EAST  270°→ belt faces +X = EAST  ✓
-    // -----------------------------------------------------------------------
-
     @Override
-    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
-        // Intentionally empty — rotation handled in preRender().
-    }
+    protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
 
     @Override
     public void preRender(MatrixStack poseStack,
                           TreadmillBlockEntity animatable,
-                          BakedGeoModel model,
-                          VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer,
-                          boolean isReRender,
-                          float partialTick,
-                          int packedLight,
-                          int packedOverlay,
-                          int color) {
+                          BakedGeoModel model, VertexConsumerProvider bufferSource,
+                          VertexConsumer buffer, boolean isReRender, float partialTick,
+                          int packedLight, int packedOverlay, int color) {
 
-        if (!TreadmillBlock.isBack(animatable.getCachedState())) {
+        BlockState state = animatable.getCachedState();
+
+        if (!TreadmillBlock.isBack(state)) {
             poseStack.scale(0f, 0f, 0f);
             return;
         }
 
-        Direction facing = animatable.getCachedState().get(TreadmillBlock.FACING);
+        // Item rendering: JSON gui transform already applied — just centre.
+        if (!animatable.hasWorld()) {
+            poseStack.translate(0.5, 0.0, 0.5);
+            return;
+        }
 
+        // World rendering: centre + rotate.
+        // Belt runs toward +Z (SOUTH) in Blockbench → facing.asRotation() is correct:
+        //   SOUTH=0°, WEST=90°, NORTH=180°, EAST=270°
+        Direction facing = state.get(TreadmillBlock.FACING);
         poseStack.translate(0.5, 0.0, 0.5);
         poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(facing.asRotation()));
     }

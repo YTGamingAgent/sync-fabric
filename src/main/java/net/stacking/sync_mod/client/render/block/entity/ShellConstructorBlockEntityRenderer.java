@@ -28,58 +28,30 @@ public class ShellConstructorBlockEntityRenderer
 
     public ShellConstructorBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
         super(new GeoModel<ShellConstructorBlockEntity>() {
-            @Override
-            public Identifier getModelResource(ShellConstructorBlockEntity animatable) {
+            @Override public Identifier getModelResource(ShellConstructorBlockEntity a) {
                 return Identifier.of("sync", "geo/block/shell_constructor.geo.json");
             }
-            @Override
-            public Identifier getTextureResource(ShellConstructorBlockEntity animatable) {
+            @Override public Identifier getTextureResource(ShellConstructorBlockEntity a) {
                 return Identifier.of("sync", "textures/block/shell_constructor.png");
             }
-            @Override
-            public Identifier getAnimationResource(ShellConstructorBlockEntity animatable) {
+            @Override public Identifier getAnimationResource(ShellConstructorBlockEntity a) {
                 return Identifier.of("sync", "animations/block/shell_constructor.animation.json");
             }
         });
     }
 
     // -----------------------------------------------------------------------
-    // Strategy: take FULL control of every transform in preRender() and
-    // cancel GeckoLib's auto-rotation via rotateBlock() → do nothing.
-    //
-    // Model cubes span X/Z: -8..+8 Blockbench units = -0.5..+0.5 blocks.
-    // The MatrixStack origin when render() is first called is at the SW
-    // corner of the block (0,0,0 relative to the block).
-    //
-    // Required net transform:
-    //   translate(0.5, 0, 0.5)     → move origin from SW corner to block centre
-    //   rotateY(yRot)              → spin model to match FACING
-    //
-    // Model front (doors) faces -Z (NORTH) in Blockbench.
-    // facing.asRotation(): SOUTH=0°, WEST=90°, NORTH=180°, EAST=270°
-    // So 180° - facing.asRotation() turns the -Z front toward FACING:
-    //   placed SOUTH → yRot=180°  → model rotated 180° → doors face +Z = SOUTH ✓
-    //   placed NORTH → yRot=0°   → doors face -Z = NORTH ✓
-    //   placed WEST  → yRot=90°  → doors face -X = WEST  ✓
-    //   placed EAST  → yRot=270° → doors face +X = EAST  ✓
+    // rotateBlock() → empty. We own all rotation in preRender().
     // -----------------------------------------------------------------------
-
     @Override
-    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
-        // Intentionally empty — we handle all rotation in preRender().
-    }
+    protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
 
     @Override
     public void preRender(MatrixStack poseStack,
                           ShellConstructorBlockEntity animatable,
-                          BakedGeoModel model,
-                          VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer,
-                          boolean isReRender,
-                          float partialTick,
-                          int packedLight,
-                          int packedOverlay,
-                          int color) {
+                          BakedGeoModel model, VertexConsumerProvider bufferSource,
+                          VertexConsumer buffer, boolean isReRender, float partialTick,
+                          int packedLight, int packedOverlay, int color) {
 
         BlockState state = animatable.hasWorld()
                 ? animatable.getCachedState()
@@ -93,20 +65,24 @@ public class ShellConstructorBlockEntityRenderer
             return;
         }
 
+        // ---- ITEM RENDERING (hotbar / inventory) ----------------------------
+        // Minecraft has ALREADY applied the gui display transform from the item
+        // model JSON (rotation [30, 225, 0], scale [0.625, 0.625, 0.625]) before
+        // calling this renderer.  We must NOT add our own rotation here or it
+        // double-rotates.  All we need is to centre the model so its X/Z pivot
+        // aligns with the display transform's origin.
         if (!animatable.hasWorld()) {
-            // Hotbar / inventory item rendering.
-            // Model is 2 blocks tall; scale + shift so it sits centred in the slot.
-            poseStack.translate(0.5, 0.15, 0.5);
-            poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(225f));
-            poseStack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(30f));
-            poseStack.scale(0.4f, 0.4f, 0.4f);
+            poseStack.translate(0.5, 0.0, 0.5);
             return;
         }
 
-        // World rendering — centre on block then rotate to face the right direction.
+        // ---- WORLD RENDERING ------------------------------------------------
+        // translate(0.5, 0, 0.5) → move model origin from SW block-corner to centre.
+        // rotateY(yRot)           → spin to match FACING direction.
+        // Model doors face -Z (NORTH) in Blockbench.  Using 180° - facing.asRotation()
+        // turns the -Z front toward the correct world direction.
         Direction facing = state.get(AbstractShellContainerBlock.FACING);
         float yRot = 180f - facing.asRotation();
-
         poseStack.translate(0.5, 0.0, 0.5);
         poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
     }
@@ -116,20 +92,17 @@ public class ShellConstructorBlockEntityRenderer
                        MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                        int light, int overlay) {
         super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay);
-
         if (!blockEntity.hasWorld()) return;
         BlockState state = blockEntity.getCachedState();
         if (!AbstractShellContainerBlock.isBottom(state)) return;
-
         ShellState shellState = blockEntity.getShellState();
         if (shellState == null) return;
-
         float yaw = state.get(AbstractShellContainerBlock.FACING).getOpposite().asRotation();
-        ShellEntity shellEntity = shellState.asEntity();
-        shellEntity.isActive = false;
-        shellEntity.pitchProgress = 0;
+        ShellEntity shell = shellState.asEntity();
+        shell.isActive = false;
+        shell.pitchProgress = 0;
         EntityRenderer<? super ShellEntity> renderer =
-                MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shellEntity);
-        renderer.render(shellEntity, yaw, tickDelta, matrices, vertexConsumers, light);
+                MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shell);
+        renderer.render(shell, yaw, tickDelta, matrices, vertexConsumers, light);
     }
 }

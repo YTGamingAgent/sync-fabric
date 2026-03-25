@@ -28,37 +28,27 @@ public class ShellStorageBlockEntityRenderer
 
     public ShellStorageBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
         super(new GeoModel<ShellStorageBlockEntity>() {
-            @Override
-            public Identifier getModelResource(ShellStorageBlockEntity animatable) {
+            @Override public Identifier getModelResource(ShellStorageBlockEntity a) {
                 return Identifier.of("sync", "geo/block/shell_storage.geo.json");
             }
-            @Override
-            public Identifier getTextureResource(ShellStorageBlockEntity animatable) {
+            @Override public Identifier getTextureResource(ShellStorageBlockEntity a) {
                 return Identifier.of("sync", "textures/block/shell_storage.png");
             }
-            @Override
-            public Identifier getAnimationResource(ShellStorageBlockEntity animatable) {
+            @Override public Identifier getAnimationResource(ShellStorageBlockEntity a) {
                 return Identifier.of("sync", "animations/block/shell_storage.animation.json");
             }
         });
     }
 
     @Override
-    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
-        // Intentionally empty — rotation handled entirely in preRender().
-    }
+    protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
 
     @Override
     public void preRender(MatrixStack poseStack,
                           ShellStorageBlockEntity animatable,
-                          BakedGeoModel model,
-                          VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer,
-                          boolean isReRender,
-                          float partialTick,
-                          int packedLight,
-                          int packedOverlay,
-                          int color) {
+                          BakedGeoModel model, VertexConsumerProvider bufferSource,
+                          VertexConsumer buffer, boolean isReRender, float partialTick,
+                          int packedLight, int packedOverlay, int color) {
 
         BlockState state = animatable.hasWorld()
                 ? animatable.getCachedState()
@@ -72,18 +62,15 @@ public class ShellStorageBlockEntityRenderer
             return;
         }
 
+        // Item rendering: JSON gui transform already applied — just centre model.
         if (!animatable.hasWorld()) {
-            // Hotbar / inventory item rendering — same angle as constructor.
-            poseStack.translate(0.5, 0.15, 0.5);
-            poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(225f));
-            poseStack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(30f));
-            poseStack.scale(0.4f, 0.4f, 0.4f);
+            poseStack.translate(0.5, 0.0, 0.5);
             return;
         }
 
+        // World rendering: centre + rotate to facing.
         Direction facing = state.get(AbstractShellContainerBlock.FACING);
         float yRot = 180f - facing.asRotation();
-
         poseStack.translate(0.5, 0.0, 0.5);
         poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
     }
@@ -93,21 +80,17 @@ public class ShellStorageBlockEntityRenderer
                        MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                        int light, int overlay) {
         super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay);
-
         if (!blockEntity.hasWorld()) return;
         BlockState state = blockEntity.getCachedState();
         if (!AbstractShellContainerBlock.isBottom(state)) return;
-
         ShellState shellState = blockEntity.getShellState();
         if (shellState == null) return;
-
         float yaw = state.get(AbstractShellContainerBlock.FACING).getOpposite().asRotation();
-        ShellEntity shellEntity = shellState.asEntity();
-        shellEntity.isActive      = shellState.getProgress() >= ShellState.PROGRESS_DONE;
-        shellEntity.pitchProgress = shellEntity.isActive
-                ? blockEntity.getConnectorProgress(tickDelta) : 0;
+        ShellEntity shell = shellState.asEntity();
+        shell.isActive      = shellState.getProgress() >= ShellState.PROGRESS_DONE;
+        shell.pitchProgress = shell.isActive ? blockEntity.getConnectorProgress(tickDelta) : 0;
         EntityRenderer<? super ShellEntity> renderer =
-                MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shellEntity);
-        renderer.render(shellEntity, yaw, tickDelta, matrices, vertexConsumers, light);
+                MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shell);
+        renderer.render(shell, yaw, tickDelta, matrices, vertexConsumers, light);
     }
 }

@@ -6,13 +6,14 @@ import net.minecraft.block.DoubleBlockProperties;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.passive.TameableEntity;
-import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.nbt.NbtCompound;
 import net.stacking.sync_mod.Sync;
 import net.stacking.sync_mod.api.event.EntityFitnessEvents;
 import net.stacking.sync_mod.block.TreadmillBlock;
@@ -33,7 +34,13 @@ public class TreadmillBlockEntity extends BlockEntity
         implements DoubleBlockEntity, TickableBlockEntity, EnergyStorage, GeoBlockEntity {
 
     public static final long CAPACITY = 64_000L;
-    // Keep squaredDistance tight — entity must be physically standing on the belt.
+    /**
+     * Energy produced per tick by any passive animal (or the config-map default
+     * for other entity types).  All passive animals are intentionally equal —
+     * no species produces more energy than any other.
+     */
+    private static final long PASSIVE_ANIMAL_ENERGY_PER_TICK = 200L;
+
     private static final double MAX_SQUARED_DISTANCE = 0.5;
     private static final Map<net.minecraft.entity.EntityType<?>, Long> ENERGY_MAP;
 
@@ -51,20 +58,15 @@ public class TreadmillBlockEntity extends BlockEntity
     // ---- GeoBlockEntity --------------------------------------------------------
 
     @Override
-    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        // No animations for the treadmill currently.
-    }
+    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {}
 
     @Override
-    public AnimatableInstanceCache getAnimatableInstanceCache() {
-        return cache;
-    }
+    public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
 
     // ---- TickableBlockEntity ---------------------------------------------------
 
     @Override
     public void onClientTick(net.minecraft.world.World world, BlockPos pos, BlockState state) {
-        // Animate limbs client-side if a runner is known.
         if (this.runner instanceof LivingEntity living) {
             living.limbAnimator.updateLimbs(1.0f, 1.0f);
         }
@@ -73,11 +75,9 @@ public class TreadmillBlockEntity extends BlockEntity
     @Override
     public void onServerTick(net.minecraft.world.World world, BlockPos pos, BlockState state) {
         if (!(world instanceof ServerWorld serverWorld)) return;
-
-        // Only the BACK block entity manages energy and the runner.
         if (!TreadmillBlock.isBack(state)) return;
 
-        // Resolve runner from UUID after load.
+        // Resolve runner from UUID after chunk load.
         if (this.runner == null && this.runnerUuid != null) {
             this.runner = serverWorld.getEntity(this.runnerUuid);
         }
@@ -87,48 +87,59 @@ public class TreadmillBlockEntity extends BlockEntity
             Vec3d pivot = computeTreadmillPivot(pos, facing);
 
             if (!isValidRunner(this.runner) || !isEntityNear(this.runner, pivot)) {
-                // Runner left or became invalid — reset.
-                EntityFitnessEvents.STOP_RUNNING.invoker().onStopRunning(this.runner, this);
-                this.runner = null;
-                this.runnerUuid = null;
-                this.runningTime = 0;
-                this.markDirty();
-            } else {
-                // Keep non-player runners on the belt.
-                if (!this.runner.isPlayer()) {
-                    float yaw = facing.asRotation();
-                    this.runner.updatePositionAndAngles(pivot.x, pivot.y, pivot.z, yaw, 0);
-                    this.runner.setHeadYaw(yaw);
-                    this.runner.setBodyYaw(yaw);
-                }
+                // Runner wandered off or became invalid.
+                releaseRunner();
+                return;
+            }
 
-                if (this.runner instanceof LivingEntity living) {
-                    living.setDespawnCounter(0);
-                }
+            // ── Keep non-player runners on the belt ──────────────────────────
+            // setPos is only called while the runner is valid (hurtTime == 0).
+            // The moment a player hits the animal, hurtTime becomes > 0 on the
+            // next tick, isValidRunner() returns false, and the runner is released
+            // — the normal knockback then carries the animal off the belt.
+            if (!this.runner.isPlayer()) {
+                float yaw = facing.asRotation();
+                this.runner.updatePositionAndAngles(pivot.x, pivot.y, pivot.z, yaw, 0);
+                this.runner.setHeadYaw(yaw);
+                this.runner.setBodyYaw(yaw);
+            }
 
-                // Generate energy.
-                Long perTick = getOutputEnergyQuantityForEntity(this.runner, this);
-                if (perTick != null && perTick > 0) {
-                    long space = CAPACITY - this.energy;
-                    if (space > 0) {
-                        this.energy += Math.min(space, perTick);
-                        this.runningTime++;
-                        if (this.runningTime % 100 == 0) this.markDirty();
-                    }
+            if (this.runner instanceof LivingEntity living) {
+                living.setDespawnCounter(0);
+            }
+
+            // ── Generate energy ──────────────────────────────────────────────
+            Long perTick = getOutputEnergyQuantityForEntity(this.runner, this);
+            if (perTick != null && perTick > 0) {
+                long space = CAPACITY - this.energy;
+                if (space > 0) {
+                    this.energy += Math.min(space, perTick);
+                    this.runningTime++;
+                    if (this.runningTime % 100 == 0) this.markDirty();
                 }
             }
         }
 
-        // Push stored energy to adjacent machines each tick.
+        // ── Push stored energy to adjacent machines ──────────────────────────
         if (this.energy > 0) {
-            this.transferEnergy(world, pos, state);
+            transferEnergy(world, pos, state);
         }
     }
 
+    private void releaseRunner() {
+        if (this.runner != null) {
+            EntityFitnessEvents.STOP_RUNNING.invoker().onStopRunning(this.runner, this);
+        }
+        this.runner = null;
+        this.runnerUuid = null;
+        this.runningTime = 0;
+        this.markDirty();
+    }
+
     /**
-     * Actively push energy into any adjacent EnergyStorage that accepts insertion.
-     * Checks all 6 faces of both the BACK block and the FRONT block so the
-     * constructor can be placed on any side of the treadmill.
+     * Pushes stored energy out to any adjacent EnergyStorage that accepts insertion.
+     * Checks all six faces of both the BACK and FRONT blocks so the constructor can
+     * be placed on any side of the treadmill.
      */
     private void transferEnergy(net.minecraft.world.World world, BlockPos backPos, BlockState state) {
         BlockPos frontPos = backPos.offset(state.get(TreadmillBlock.FACING));
@@ -148,7 +159,7 @@ public class TreadmillBlockEntity extends BlockEntity
     public void onSteppedOn(BlockPos pos, BlockState state, Entity entity) {
         if (this.world == null || this.world.isClient) return;
         if (!TreadmillBlock.isBack(state)) return;
-        if (this.runner != null) return;   // already occupied
+        if (this.runner != null) return; // already occupied
 
         Vec3d pivot = computeTreadmillPivot(pos, state.get(TreadmillBlock.FACING));
         if (!isEntityNear(entity, pivot)) return;
@@ -161,9 +172,7 @@ public class TreadmillBlockEntity extends BlockEntity
         this.markDirty();
     }
 
-    public boolean isOverheated() {
-        return false;
-    }
+    public boolean isOverheated() { return false; }
 
     // ---- EnergyStorage ---------------------------------------------------------
 
@@ -172,9 +181,7 @@ public class TreadmillBlockEntity extends BlockEntity
         if (maxAmount <= 0) return 0;
         long space = CAPACITY - this.energy;
         long accepted = Math.min(space, maxAmount);
-        if (accepted > 0) {
-            this.energy += accepted;
-        }
+        if (accepted > 0) { this.energy += accepted; this.markDirty(); }
         return accepted;
     }
 
@@ -182,15 +189,13 @@ public class TreadmillBlockEntity extends BlockEntity
     public long extract(long maxAmount, TransactionContext transaction) {
         if (maxAmount <= 0) return 0;
         long extracted = Math.min(this.energy, maxAmount);
-        if (extracted > 0) {
-            this.energy -= extracted;
-        }
+        if (extracted > 0) { this.energy -= extracted; this.markDirty(); }
         return extracted;
     }
 
     @Override public long getAmount()             { return this.energy; }
     @Override public long getCapacity()           { return CAPACITY; }
-    @Override public boolean supportsInsertion()  { return false; }  // generator, not battery
+    @Override public boolean supportsInsertion()  { return false; }
     @Override public boolean supportsExtraction() { return true; }
 
     // ---- DoubleBlockEntity -----------------------------------------------------
@@ -207,10 +212,10 @@ public class TreadmillBlockEntity extends BlockEntity
     @Override
     protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
         super.readNbt(nbt, registryLookup);
-        this.runnerUuid = nbt.containsUuid("Runner") ? nbt.getUuid("Runner") : null;
-        this.energy     = nbt.getLong("Energy");
+        this.runnerUuid  = nbt.containsUuid("Runner") ? nbt.getUuid("Runner") : null;
+        this.energy      = nbt.getLong("Energy");
         this.runningTime = nbt.getInt("RunningTime");
-        this.runner = null;
+        this.runner      = null;
     }
 
     @Override
@@ -226,14 +231,29 @@ public class TreadmillBlockEntity extends BlockEntity
 
     // ---- Helpers ---------------------------------------------------------------
 
+    /**
+     * Returns energy per tick for the given entity.
+     *
+     * All passive animals produce the same fixed amount — no species is better
+     * than any other.  Player energy falls through to the config map.
+     * Non-passive non-player entities that aren't in the config map return null
+     * (no energy).
+     */
     private static Long getOutputEnergyQuantityForEntity(Entity entity, EnergyStorage storage) {
+        if (entity instanceof PassiveEntity) {
+            // Every passive animal produces the same fixed energy per tick.
+            return PASSIVE_ANIMAL_ENERGY_PER_TICK;
+        }
+        // Players and any other entity types use the config map via the event.
         return EntityFitnessEvents.MODIFY_OUTPUT_ENERGY_QUANTITY.invoker()
                 .modifyOutputEnergyQuantity(entity, storage, ENERGY_MAP.get(entity.getType()));
     }
 
     private static boolean isValidRunner(Entity entity) {
         if (entity == null || !entity.isAlive()) return false;
-        return !entity.isSpectator() && !entity.isSneaking() && !entity.isSwimming()
+        return !entity.isSpectator()
+                && !entity.isSneaking()
+                && !entity.isSwimming()
                 && (!(entity instanceof LivingEntity l) || (l.hurtTime <= 0 && !l.isBaby()))
                 && (!(entity instanceof TameableEntity t) || !t.isSitting());
     }

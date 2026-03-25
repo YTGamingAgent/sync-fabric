@@ -43,35 +43,31 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     public static final MapCodec<TreadmillBlock> CODEC = createCodec(TreadmillBlock::new);
     public static final EnumProperty<Part> PART = EnumProperty.of("treadmill_part", Part.class);
 
-    private static final VoxelShape SHAPE_BACK_SOUTH = VoxelShapes.union(
-            // Belt + side rails (low, spans full block Z)
-            Block.createCuboidShape(1, 0, 0, 15, 10, 16),
-            // Handlebar uprights (tall, only at the BACK face)
-            Block.createCuboidShape(1, 10, 0,  15, 16,  3)
-    );
-    private static final VoxelShape SHAPE_FRONT_SOUTH =
-            Block.createCuboidShape(1, 0, 0, 15, 10, 16);
+    // ── Collision shapes (physical — what you stand on / bump into) ─────────────
+    // Belt surface at 8/16 = 0.5 blocks tall.  Minecraft's step-up threshold is
+    // 0.6 blocks, so a player or animal walking up to the treadmill steps straight
+    // onto the belt without needing to jump.  The handlebar console is intentionally
+    // excluded from collision so it does not block the runner.
+    private static final VoxelShape COL_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
+    private static final VoxelShape COL_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
 
-    private static final VoxelShape SHAPE_BACK_NORTH = VoxelShapes.union(
-            Block.createCuboidShape(1, 0, 0,  15, 10, 16),
-            Block.createCuboidShape(1, 10, 13, 15, 16, 16)
+    // ── Outline shapes (selection highlight — includes handlebar on BACK half) ──
+    private static final VoxelShape OUTLINE_BACK_SOUTH = VoxelShapes.union(
+            Block.createCuboidShape(1, 0, 0, 15, 8, 16),
+            Block.createCuboidShape(1, 8, 0, 15, 16, 3)
     );
-    private static final VoxelShape SHAPE_FRONT_NORTH =
-            Block.createCuboidShape(1, 0, 0, 15, 10, 16);
-
-    private static final VoxelShape SHAPE_BACK_EAST = VoxelShapes.union(
-            Block.createCuboidShape(0, 0, 1, 16, 10, 15),
-            Block.createCuboidShape(0, 10, 1,  3, 16, 15)
+    private static final VoxelShape OUTLINE_BACK_NORTH = VoxelShapes.union(
+            Block.createCuboidShape(1, 0, 0, 15, 8, 16),
+            Block.createCuboidShape(1, 8, 13, 15, 16, 16)
     );
-    private static final VoxelShape SHAPE_FRONT_EAST =
-            Block.createCuboidShape(0, 0, 1, 16, 10, 15);
-
-    private static final VoxelShape SHAPE_BACK_WEST = VoxelShapes.union(
-            Block.createCuboidShape(0, 0, 1, 16, 10, 15),
-            Block.createCuboidShape(13, 10, 1, 16, 16, 15)
+    private static final VoxelShape OUTLINE_BACK_EAST = VoxelShapes.union(
+            Block.createCuboidShape(0, 0, 1, 16, 8, 15),
+            Block.createCuboidShape(0, 8, 1, 3, 16, 15)
     );
-    private static final VoxelShape SHAPE_FRONT_WEST =
-            Block.createCuboidShape(0, 0, 1, 16, 10, 15);
+    private static final VoxelShape OUTLINE_BACK_WEST = VoxelShapes.union(
+            Block.createCuboidShape(0, 0, 1, 16, 8, 15),
+            Block.createCuboidShape(13, 8, 1, 16, 16, 15)
+    );
 
     public TreadmillBlock(Settings settings) {
         super(settings);
@@ -104,30 +100,26 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     protected VoxelShape getOutlineShape(BlockState state, BlockView world,
                                          BlockPos pos, ShapeContext context) {
-        return getShape(state);
+        Direction facing = state.get(FACING);
+        if (state.get(PART) == Part.BACK) {
+            return switch (facing) {
+                case SOUTH -> OUTLINE_BACK_SOUTH;
+                case NORTH -> OUTLINE_BACK_NORTH;
+                case EAST  -> OUTLINE_BACK_EAST;
+                case WEST  -> OUTLINE_BACK_WEST;
+                default    -> OUTLINE_BACK_SOUTH;
+            };
+        }
+        // FRONT half — belt only, no handlebars
+        return (facing == Direction.EAST || facing == Direction.WEST) ? COL_EW : COL_NS;
     }
 
     @Override
     protected VoxelShape getCollisionShape(BlockState state, BlockView world,
                                            BlockPos pos, ShapeContext context) {
-        return getShape(state);
-    }
-
-    /**
-     * Returns the correct VoxelShape for this block half and facing direction.
-     * Shapes are pre-computed constants — no allocation at render time.
-     */
-    private static VoxelShape getShape(BlockState state) {
+        // Belt only — handlebars are purely visual and never block movement.
         Direction facing = state.get(FACING);
-        Part part        = state.get(PART);
-        boolean isBack   = part == Part.BACK;
-        return switch (facing) {
-            case SOUTH -> isBack ? SHAPE_BACK_SOUTH : SHAPE_FRONT_SOUTH;
-            case NORTH -> isBack ? SHAPE_BACK_NORTH : SHAPE_FRONT_NORTH;
-            case EAST  -> isBack ? SHAPE_BACK_EAST  : SHAPE_FRONT_EAST;
-            case WEST  -> isBack ? SHAPE_BACK_WEST  : SHAPE_FRONT_WEST;
-            default    -> VoxelShapes.fullCube();
-        };
+        return (facing == Direction.EAST || facing == Direction.WEST) ? COL_EW : COL_NS;
     }
 
     @Override

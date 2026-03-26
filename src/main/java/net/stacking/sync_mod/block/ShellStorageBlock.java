@@ -3,6 +3,7 @@ package net.stacking.sync_mod.block;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityType;
@@ -100,14 +101,16 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
     // ── Collision shape ───────────────────────────────────────────────────────
 
     public static void setPowered(BlockState state, World world, BlockPos pos, boolean powered) {
-        if (state.get(POWERED) != powered) {
-            world.setBlockState(pos, state.with(POWERED, powered), Block.NOTIFY_ALL);
+        BlockState liveState = world.getBlockState(pos);  // ← read CURRENT state
+        if (liveState.get(POWERED) != powered) {
+            world.setBlockState(pos, liveState.with(POWERED, powered), Block.NOTIFY_ALL);
         }
     }
 
     public static void setOpen(BlockState state, World world, BlockPos pos, boolean open) {
-        if (state.get(OPEN) != open) {
-            world.setBlockState(pos, state.with(OPEN, open), Block.NOTIFY_ALL);
+        BlockState liveState = world.getBlockState(pos);  // ← read CURRENT state
+        if (liveState.get(OPEN) != open) {
+            world.setBlockState(pos, liveState.with(OPEN, open), Block.NOTIFY_ALL);
         }
     }
 
@@ -125,18 +128,22 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
         };
     }
 
-    @Override
     protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand) {
         if (world.isClient) return ActionResult.SUCCESS;
 
-        // If TOP half, forward to BOTTOM half
+        BlockPos targetPos = pos;
+        BlockState targetState = state;
+
+        // If TOP half, get the BOTTOM half
         if (state.get(HALF) == DoubleBlockHalf.UPPER) {
-            pos = pos.offset(Direction.DOWN);
-            state = world.getBlockState(pos);
+            targetPos = pos.offset(Direction.DOWN);
+            targetState = world.getBlockState(targetPos);
         }
 
-        if (!(world.getBlockEntity(pos) instanceof ShellStorageBlockEntity be)) return ActionResult.PASS;
-        return be.onUse(world, pos, player, hand);
+        // Must be LOWER half now
+        if (targetState.get(HALF) != DoubleBlockHalf.LOWER) return ActionResult.PASS;
+        if (!(world.getBlockEntity(targetPos) instanceof ShellStorageBlockEntity be)) return ActionResult.PASS;
+        return be.onUse(world, targetPos, player, hand);
     }
 
     // ── Redstone detection
@@ -155,14 +162,24 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
         updateEnabled(world, pos, state);
     }
 
+    // ── FIX for vertical double-blocks (LOWER/UPPER) ────────────────────────
     @Override
     public BlockState getStateForNeighborUpdate(BlockState state, Direction direction,
                                                 BlockState neighborState, WorldAccess world,
                                                 BlockPos pos, BlockPos neighborPos) {
-        BlockState updated = super.getStateForNeighborUpdate(
-                state, direction, neighborState, world, pos, neighborPos);
-        if (world instanceof World w) updateEnabled(w, pos, updated);
-        return updated;
+        // For vertical double-blocks, the other half is always UP or DOWN
+        Direction directionToOtherPart = state.get(HALF) == DoubleBlockHalf.LOWER
+                ? Direction.UP : Direction.DOWN;
+
+        if (direction == directionToOtherPart) {
+            // Check if the neighbor is the correct type with the OTHER half
+            return neighborState.isOf(this) && neighborState.get(HALF) != state.get(HALF)
+                    ? state
+                    : Blocks.AIR.getDefaultState();
+        }
+
+        // For other directions, delegate to parent for open/comparator logic
+        return super.getStateForNeighborUpdate(state, direction, neighborState, world, pos, neighborPos);
     }
 
     private static void updateEnabled(World world, BlockPos pos, BlockState state) {
@@ -191,17 +208,30 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
 
     @Override
     public void onEntityCollision(BlockState state, World world, BlockPos pos, Entity entity) {
-        if (!world.isClient) return;
+        if (!world.isClient || !(entity instanceof PlayerEntity)) return;
 
-        // If TOP half, forward collision to BOTTOM half
+        // Determine which block to use for entity collision
+        BlockPos targetPos = pos;
+        BlockState targetState = state;
+
+        // If we're on the TOP half, get the BOTTOM half
         if (state.get(HALF) == DoubleBlockHalf.UPPER) {
-            pos = pos.offset(Direction.DOWN);
-            state = world.getBlockState(pos);
+            targetPos = pos.offset(Direction.DOWN);
+            targetState = world.getBlockState(targetPos);
         }
 
-        if (state.get(HALF) != DoubleBlockHalf.LOWER) return;
-        if (!(world.getBlockEntity(pos) instanceof ShellStorageBlockEntity be)) return;
-        be.onEntityCollisionClient(entity, state);
+        // Verify we have the BOTTOM half and its block entity
+        if (!targetState.isOf(this) || targetState.get(HALF) != DoubleBlockHalf.LOWER) {
+            return;
+        }
+
+        BlockEntity blockEntity = world.getBlockEntity(targetPos);
+        if (!(blockEntity instanceof ShellStorageBlockEntity be)) {
+            return;
+        }
+
+        // Now call the client-side logic
+        be.onEntityCollisionClient(entity, targetState);
     }
 
     // ── Comparator output ─────────────────────────────────────────────────────

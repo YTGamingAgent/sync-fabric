@@ -106,14 +106,22 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
 
     @Nullable
     private PlayerSyncEvents.ShellConstructionFailureReason beginShellConstruction(PlayerEntity player) {
-        // Only allow shell creation on the BOTTOM half
-        if (!AbstractShellContainerBlock.isBottom(this.getCachedState())) {
+        BlockState currentState = this.world != null ? this.world.getBlockState(this.pos) : this.getCachedState();
+
+        if (!AbstractShellContainerBlock.isBottom(currentState)) {
             return PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
         }
 
-        PlayerSyncEvents.ShellConstructionFailureReason failureReason = this.shell == null
-                ? PlayerSyncEvents.ALLOW_SHELL_CONSTRUCTION.invoker().allowShellConstruction(player, this)
-                : PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
+        // ── AGGRESSIVE CLEAR: Remove ANY existing shell to make room ──────────────
+        // Don't wait for 100% — just clear it so we can create a fresh one
+        if (this.shell != null) {
+            this.shell = null;
+            this.markDirty();
+        }
+
+        // Now create the new shell
+        PlayerSyncEvents.ShellConstructionFailureReason failureReason =
+                PlayerSyncEvents.ALLOW_SHELL_CONSTRUCTION.invoker().allowShellConstruction(player, this);
 
         if (failureReason != null) {
             return failureReason;
@@ -121,7 +129,7 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
 
         if (player instanceof ServerPlayerEntity serverPlayer) {
             SyncConfig config = Sync.getConfig();
-            float damage = serverPlayer.server.isHardcore() ? config.hardcoreFingerstickDamage() : config.fingerstickDamage();
+            float damage = 0.5f;  // Half a heart
             boolean isCreative = !serverPlayer.interactionManager.getGameMode().isSurvivalLike();
             boolean isLowOnHealth = (player.getHealth() + player.getAbsorptionAmount()) <= damage;
             boolean hasTotemOfUndying = player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING) || player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING);
@@ -130,11 +138,15 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
                 return PlayerSyncEvents.ShellConstructionFailureReason.NOT_ENOUGH_HEALTH;
             }
 
-            player.damage(world.getDamageSources().sweetBerryBush(), damage);
-            this.shell = ShellState.empty(serverPlayer, this.pos);  // store on THIS (which is BOTTOM)
+            if (!isCreative) {
+                player.damage(this.world.getDamageSources().sweetBerryBush(), damage);
+            }
+
+            this.shell = ShellState.empty(serverPlayer, this.pos);
             if (isCreative && config.enableInstantShellConstruction()) {
                 this.shell.setProgress(ShellState.PROGRESS_DONE);
             }
+            this.markDirty();
         }
         return null;
     }

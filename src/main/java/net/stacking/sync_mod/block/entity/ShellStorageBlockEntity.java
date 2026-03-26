@@ -92,7 +92,7 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     // Original logic
 
     public DyeColor getIndicatorColor() {
-        if (this.world != null && ShellStorageBlock.isPowered(this.getCachedState())) {
+        if (this.world != null && ShellStorageBlock.isPowered(this.world.getBlockState(this.pos))) {
             return this.color == null ? DyeColor.LIME : this.color;
         }
         return DyeColor.RED;
@@ -163,7 +163,10 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
 
         if (this.entityState == EntityState.ENTERING && client.player == entity && client.currentScreen == null
                 && BlockPosUtil.isEntityInside(entity, this.pos)) {
-            client.setScreen(new ShellSelectorGUI(() -> this.entityState = EntityState.LEAVING, () -> this.entityState = EntityState.CHILLING));
+            client.setScreen(new ShellSelectorGUI(
+                    () -> this.entityState = EntityState.CHILLING,
+                    () -> this.entityState = EntityState.LEAVING,
+                    ));
         }
     }
 

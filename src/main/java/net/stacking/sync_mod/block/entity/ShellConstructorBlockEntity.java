@@ -80,6 +80,14 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
     @Override
     public void onServerTick(World world, BlockPos pos, BlockState state) {
         super.onServerTick(world, pos, state);
+
+        // ── Clear completed shell ────────────────────────────────────────
+        // When construction is done, remove the shell so a new one can start
+        if (this.shell != null && this.shell.getProgress() >= ShellState.PROGRESS_DONE) {
+            this.shell = null;
+            this.markDirty();
+        }
+
         if (ShellConstructorBlock.isOpen(state)) {
             ShellConstructorBlock.setOpen(state, world, pos, BlockPosUtil.hasPlayerInside(pos, world));
         }

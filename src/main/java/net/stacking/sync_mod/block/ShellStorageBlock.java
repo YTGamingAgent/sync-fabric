@@ -94,6 +94,18 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
 
     // ── Collision shape ───────────────────────────────────────────────────────
 
+    public static void setPowered(BlockState state, World world, BlockPos pos, boolean powered) {
+        if (state.get(POWERED) != powered) {
+            world.setBlockState(pos, state.with(POWERED, powered), Block.NOTIFY_ALL);
+        }
+    }
+
+    public static void setOpen(BlockState state, World world, BlockPos pos, boolean open) {
+        if (state.get(OPEN) != open) {
+            world.setBlockState(pos, state.with(OPEN, open), Block.NOTIFY_ALL);
+        }
+    }
+
     @Override
     protected VoxelShape getCollisionShape(BlockState state, BlockView world,
                                            BlockPos pos, ShapeContext context) {

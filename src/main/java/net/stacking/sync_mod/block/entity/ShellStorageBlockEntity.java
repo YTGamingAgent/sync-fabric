@@ -14,6 +14,7 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.BedBlock;
+import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -22,12 +23,17 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.DyeColor;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
+import net.minecraft.network.listener.ClientPlayPacketListener;
+import net.minecraft.network.packet.Packet;
+import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
+import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoBlockEntity;
 import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.animation.AnimatableManager;
@@ -88,15 +94,20 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     // ── Indicator color (red/green/blue) ──────────────────────────────────────
 
     public DyeColor getIndicatorColor() {
-        // Blue = primary/default storage
+        // Check power first — always show RED when unpowered, even if primary
+        boolean isPowered = this.world != null && ShellStorageBlock.isPowered(this.world.getBlockState(this.pos));
+
+        if (!isPowered) {
+            return DyeColor.RED;  // Unpowered = always red (even if primary)
+        }
+
+        // Powered: check if primary
         if (this.isPrimaryStorage) {
-            return DyeColor.BLUE;
+            return DyeColor.BLUE;  // Powered + primary = blue
         }
-        // Red/Green based on redstone power
-        if (this.world != null && ShellStorageBlock.isPowered(this.world.getBlockState(this.pos))) {
-            return this.color == null ? DyeColor.LIME : this.color;
-        }
-        return DyeColor.RED;
+
+        // Powered but not primary = green or custom dye color
+        return this.color == null ? DyeColor.LIME : this.color;
     }
 
     public boolean isPrimaryStorage() { return this.isPrimaryStorage; }
@@ -104,7 +115,18 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     private void setPrimaryStorage(boolean primary) {
         if (this.isPrimaryStorage == primary) return;
         this.isPrimaryStorage = primary;
-        this.markDirty();
+        sync(); // ← call sync instead of just markDirty()
+    }
+
+    /**
+     * Marks dirty for saving AND fires an update packet to watching clients.
+     */
+    protected void sync() {
+        markDirty();
+        if (this.world != null && !this.world.isClient) {
+            this.world.updateListeners(this.pos, getCachedState(), getCachedState(),
+                    Block.NOTIFY_LISTENERS);
+        }
     }
 
     @Environment(EnvType.CLIENT)
@@ -112,6 +134,20 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
         return this.getBottomPart()
                 .map(x -> ((ShellStorageBlockEntity) x).connectorAnimator.getProgress(tickDelta))
                 .orElse(0f);
+    }
+
+    // ── Client sync ───────────────────────────────────────────────────────
+    // Send the primary storage flag to all watching clients immediately.
+
+    @Nullable
+    @Override
+    public Packet<ClientPlayPacketListener> toUpdatePacket() {
+        return BlockEntityUpdateS2CPacket.create(this);
+    }
+
+    @Override
+    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registryLookup) {
+        return createNbt(registryLookup);
     }
 
     // ── Server tick ───────────────────────────────────────────────────────────
@@ -210,7 +246,7 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
         Item item = stack.getItem();
 
         // Bed right-click: make this storage primary ────────────────────────────
-        if (item instanceof BedBlock || (item.getName().getString().toLowerCase().contains("bed"))) {
+        if (item.getName().getString().toLowerCase().contains("bed")) {
             // Check if powered
             BlockState state = world.getBlockState(pos);
             if (!ShellStorageBlock.isPowered(state)) {
@@ -269,16 +305,17 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     // ── NBT persistence ──────────────────────────────────────────────────────
 
     @Override
-    public void readNbt(NbtCompound nbt) {
-        super.readNbt(nbt);
+    public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+        super.readNbt(nbt, registryLookup);
         this.isPrimaryStorage = nbt.getBoolean("IsPrimary");
     }
 
     @Override
-    protected void writeNbt(NbtCompound nbt) {
-        super.writeNbt(nbt);
+    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+        super.writeNbt(nbt, registryLookup);
         nbt.putBoolean("IsPrimary", this.isPrimaryStorage);
     }
+
 
     // ── EnergyStorage ─────────────────────────────────────────────────────────
 

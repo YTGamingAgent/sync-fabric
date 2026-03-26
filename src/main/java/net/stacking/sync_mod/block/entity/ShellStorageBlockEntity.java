@@ -1,5 +1,6 @@
 package net.stacking.sync_mod.block.entity;
 
+import net.minecraft.nbt.NbtCompound;
 import net.stacking.sync_mod.Sync;
 import net.stacking.sync_mod.api.event.PlayerSyncEvents;
 import net.stacking.sync_mod.api.shell.ShellStateContainer;
@@ -12,6 +13,7 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.BedBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -19,11 +21,11 @@ import net.minecraft.item.DyeItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.DyeColor;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import software.bernie.geckolib.animatable.GeoBlockEntity;
@@ -54,6 +56,7 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     private int ticksWithoutPower;
     private long storedEnergy;
     private final BooleanAnimator connectorAnimator;
+    private boolean isPrimaryStorage = false;
 
     public ShellStorageBlockEntity(BlockPos pos, BlockState state) {
         super(SyncBlockEntities.SHELL_STORAGE, pos, state);
@@ -61,7 +64,7 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
         this.connectorAnimator = new BooleanAnimator(false);
     }
 
-    // ── GeckoLib ──────────────────────────────────────────────────────────────
+    // ── GeoBlockEntity ────────────────────────────────────────────────────────
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
@@ -82,14 +85,26 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
 
-    // ── Indicator ─────────────────────────────────────────────────────────────
+    // ── Indicator color (red/green/blue) ──────────────────────────────────────
 
     public DyeColor getIndicatorColor() {
-        // Always read the live world state — never the stale getCachedState() snapshot
+        // Blue = primary/default storage
+        if (this.isPrimaryStorage) {
+            return DyeColor.BLUE;
+        }
+        // Red/Green based on redstone power
         if (this.world != null && ShellStorageBlock.isPowered(this.world.getBlockState(this.pos))) {
             return this.color == null ? DyeColor.LIME : this.color;
         }
         return DyeColor.RED;
+    }
+
+    public boolean isPrimaryStorage() { return this.isPrimaryStorage; }
+
+    private void setPrimaryStorage(boolean primary) {
+        if (this.isPrimaryStorage == primary) return;
+        this.isPrimaryStorage = primary;
+        this.markDirty();
     }
 
     @Environment(EnvType.CLIENT)
@@ -107,33 +122,16 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
 
         SyncConfig config = Sync.getConfig();
         boolean infinitePower = config.shellStorageConsumption() == 0;
-
-        // ── FIX: read the LIVE world state, not the stale 'state' snapshot ──
-        // The snapshot may be several ticks behind after neighbourUpdate changes.
-        BlockState liveState = world.getBlockState(pos);
-
         boolean isReceivingRedstonePower = !infinitePower
                 && config.shellStorageAcceptsRedstone()
-                && ShellStorageBlock.isEnabled(liveState);   // ← live state ✅
-
-        boolean hasEnergy  = infinitePower || this.storedEnergy > 0;
-        boolean isPowered  = infinitePower || isReceivingRedstonePower || hasEnergy;
-
-        // Doors open when the storage is empty regardless of power —
-        // power is only needed to keep a stored shell alive.
+                && ShellStorageBlock.isEnabled(state);
+        boolean hasEnergy = infinitePower || this.storedEnergy > 0;
+        boolean isPowered = infinitePower || isReceivingRedstonePower || hasEnergy;
         boolean shouldBeOpen = isPowered;
 
-        // ── FIX: combine POWERED + OPEN into ONE setBlockState call ──────────
-        // Two separate calls both start from 'liveState', so the second call
-        // would overwrite the first call's changes (POWERED reset to false).
-        BlockState newState = liveState
-                .with(ShellStorageBlock.POWERED, isPowered)
-                .with(AbstractShellContainerBlock.OPEN, shouldBeOpen);
-        if (!newState.equals(liveState)) {
-            world.setBlockState(pos, newState, net.minecraft.block.Block.NOTIFY_ALL);
-        }
+        ShellStorageBlock.setPowered(state, world, pos, isPowered);
+        ShellStorageBlock.setOpen(state, world, pos, shouldBeOpen);
 
-        // Shell degradation when unpowered
         if (!infinitePower) {
             if (this.shell != null && !isPowered) {
                 ++this.ticksWithoutPower;
@@ -145,7 +143,6 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
             }
         }
 
-        // Energy drain
         if (!infinitePower && !isReceivingRedstonePower && hasEnergy) {
             this.storedEnergy = (long) MathHelper.clamp(
                     this.storedEnergy - config.shellStorageConsumption(),
@@ -173,20 +170,15 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
         MinecraftClient client = MinecraftClient.getInstance();
         if (!(entity instanceof PlayerEntity player)) return;
 
-        Direction facing = state.get(ShellStorageBlock.FACING);
-
         if (this.entityState == EntityState.NONE) {
             boolean isInside = BlockPosUtil.isEntityInside(entity, this.pos);
-
-            // Only allow entry from the front face ────────────────────────────
             if (!isInside) {
                 double dx  = entity.getX() - (this.pos.getX() + 0.5);
                 double dz  = entity.getZ() - (this.pos.getZ() + 0.5);
-                double dot = dx * facing.getOffsetX() + dz * facing.getOffsetZ();
-                // dot <= 0 means player is to the side or behind — reject
+                double dot = dx * state.get(ShellStorageBlock.FACING).getOffsetX()
+                        + dz * state.get(ShellStorageBlock.FACING).getOffsetZ();
                 if (dot <= 0) return;
             }
-
             PlayerSyncEvents.ShellSelectionFailureReason failureReason = !isInside && client.player == entity
                     ? PlayerSyncEvents.ALLOW_SHELL_SELECTION.invoker().allowShellSelection(player, this)
                     : null;
@@ -195,36 +187,105 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
             if (failureReason != null) player.sendMessage(failureReason.toText(), true);
 
         } else if (this.entityState != EntityState.CHILLING && client.currentScreen == null) {
-            BlockPosUtil.moveEntity(entity, this.pos, facing, this.entityState == EntityState.ENTERING);
+            BlockPosUtil.moveEntity(entity, this.pos, state.get(ShellStorageBlock.FACING),
+                    this.entityState == EntityState.ENTERING);
         }
 
         if (this.entityState == EntityState.ENTERING && client.player == entity
                 && client.currentScreen == null
                 && BlockPosUtil.isEntityInside(entity, this.pos)) {
             client.setScreen(new ShellSelectorGUI(
-                    () -> this.entityState = EntityState.CHILLING,  // Escape / close = stay inside
-                    () -> this.entityState = EntityState.LEAVING    // Leave button = exit
+                    () -> this.entityState = EntityState.CHILLING,
+                    () -> this.entityState = EntityState.LEAVING
             ));
         }
     }
 
-    // ── Right-click (dye recolor) ─────────────────────────────────────────────
+    // ── Right-click interaction ───────────────────────────────────────────────
 
     @Override
     public ActionResult onUse(World world, BlockPos pos, PlayerEntity player, Hand hand) {
         if (world.isClient) return ActionResult.SUCCESS;
         ItemStack stack = player.getStackInHand(hand);
         Item item = stack.getItem();
-        if (stack.getCount() > 0 && item instanceof DyeItem dye) {
-            stack.decrement(1);
-            this.color = dye.getColor();
+
+        // Bed right-click: make this storage primary ────────────────────────────
+        if (item instanceof BedBlock || (item.getName().getString().toLowerCase().contains("bed"))) {
+            // Check if powered
+            BlockState state = world.getBlockState(pos);
+            if (!ShellStorageBlock.isPowered(state)) {
+                player.sendMessage(Text.literal("§cShell Storage must be powered to set as primary!"), true);
+                return ActionResult.FAIL;
+            }
+
+            // If already primary, do nothing
+            if (this.isPrimaryStorage) {
+                player.sendMessage(Text.literal("§aThis is already the primary Shell Storage."), true);
+                return ActionResult.SUCCESS;
+            }
+
+            // Set this as primary and unset all others nearby
+            setPrimaryStorage(true);
+            unsetAllOtherPrimaryStorages(world, pos);
+            player.sendMessage(Text.literal("§bThis Shell Storage is now the primary storage!"), true);
+            return ActionResult.SUCCESS;
         }
-        return ActionResult.SUCCESS;
+
+        // Dye right-click: recolor indicator ───────────────────────────────────
+        if (item instanceof DyeItem dye) {
+            if (stack.getCount() > 0) {
+                stack.decrement(1);
+                this.color = dye.getColor();
+            }
+            return ActionResult.SUCCESS;
+        }
+
+        return ActionResult.PASS;
+    }
+
+    /**
+     * Finds all other ShellStorageBlockEntities within a reasonable range
+     * (e.g., 100 blocks) and unsets their isPrimaryStorage flag.
+     */
+    private void unsetAllOtherPrimaryStorages(World world, BlockPos myPos) {
+        int range = 100;
+        BlockPos.Mutable mutable = new BlockPos.Mutable();
+
+        for (int x = myPos.getX() - range; x <= myPos.getX() + range; x++) {
+            for (int y = myPos.getY() - range; y <= myPos.getY() + range; y++) {
+                for (int z = myPos.getZ() - range; z <= myPos.getZ() + range; z++) {
+                    mutable.set(x, y, z);
+                    if (mutable.equals(myPos)) continue; // Skip self
+
+                    var blockEntity = world.getBlockEntity(mutable);
+                    if (blockEntity instanceof ShellStorageBlockEntity other) {
+                        other.setPrimaryStorage(false);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── NBT persistence ──────────────────────────────────────────────────────
+
+    @Override
+    public void readNbt(NbtCompound nbt) {
+        super.readNbt(nbt);
+        this.isPrimaryStorage = nbt.getBoolean("IsPrimary");
+    }
+
+    @Override
+    protected void writeNbt(NbtCompound nbt) {
+        super.writeNbt(nbt);
+        nbt.putBoolean("IsPrimary", this.isPrimaryStorage);
     }
 
     // ── EnergyStorage ─────────────────────────────────────────────────────────
 
-    @Override public boolean supportsInsertion() { return Sync.getConfig().shellStorageConsumption() != 0; }
+    @Override public boolean supportsInsertion() {
+        return Sync.getConfig().shellStorageConsumption() != 0;
+    }
+
     @Override public boolean supportsExtraction() { return false; }
 
     @Override

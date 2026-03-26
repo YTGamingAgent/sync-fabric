@@ -49,8 +49,7 @@ public final class BlockPosUtil {
         final double MAX_SPEED = 0.33;
         double velocityX = getMinVelocity(targetX - currentX, MAX_SPEED);
         double velocityZ = getMinVelocity(targetZ - currentZ, MAX_SPEED);
-        float yaw = targetDirection.asRotation();
-
+        float yaw = facing.asRotation(); // ← CHANGED: was targetDirection.asRotation() — now faces glass doors ✅
         entity.setVelocity(velocityX, 0, velocityZ);
         entity.setPitch(0);
         entity.setYaw(yaw);

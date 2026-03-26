@@ -46,27 +46,19 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     private static final VoxelShape COL_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
     private static final VoxelShape COL_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
 
-    // ── Outline shapes (selection highlight — includes handlebar on BACK half) ──
-    // BACK half: belt box + handlebar console box
     private static final VoxelShape OUTLINE_BACK_SOUTH = VoxelShapes.union(
             Block.createCuboidShape(1, 0, 0, 15, 8, 16),
-            Block.createCuboidShape(1, 8, 0, 15, 16, 3)   // handlebar at north face of BACK block
-    );
+            Block.createCuboidShape(1, 8, 0, 15, 16, 3));
     private static final VoxelShape OUTLINE_BACK_NORTH = VoxelShapes.union(
             Block.createCuboidShape(1, 0, 0, 15, 8, 16),
-            Block.createCuboidShape(1, 8, 13, 15, 16, 16) // handlebar at south face of BACK block
-    );
+            Block.createCuboidShape(1, 8, 13, 15, 16, 16));
     private static final VoxelShape OUTLINE_BACK_EAST = VoxelShapes.union(
             Block.createCuboidShape(0, 0, 1, 16, 8, 15),
-            Block.createCuboidShape(0, 8, 1, 3, 16, 15)   // handlebar at west face of BACK block
-    );
+            Block.createCuboidShape(0, 8, 1, 3, 16, 15));
     private static final VoxelShape OUTLINE_BACK_WEST = VoxelShapes.union(
             Block.createCuboidShape(0, 0, 1, 16, 8, 15),
-            Block.createCuboidShape(13, 8, 1, 16, 16, 15) // handlebar at east face of BACK block
-    );
+            Block.createCuboidShape(13, 8, 1, 16, 16, 15));
 
-    // ── FRONT half outline: belt only, no handlebars ─────────────────────────
-    // These are separate constants so they stay decoupled from the collision shapes.
     private static final VoxelShape OUTLINE_FRONT_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
     private static final VoxelShape OUTLINE_FRONT_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
 
@@ -78,9 +70,7 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     }
 
     @Override
-    protected MapCodec<TreadmillBlock> getCodec() {
-        return CODEC;
-    }
+    protected MapCodec<TreadmillBlock> getCodec() { return CODEC; }
 
     public static boolean isBack(BlockState state) {
         return state.get(PART) == Part.BACK;
@@ -101,11 +91,10 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     }
 
     @Override
-    protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+    protected VoxelShape getOutlineShape(BlockState state, BlockView world,
+                                         BlockPos pos, ShapeContext context) {
         Direction facing = state.get(FACING);
-
         if (state.get(PART) == Part.BACK) {
-            // BACK block: belt + handlebar console
             return switch (facing) {
                 case SOUTH -> OUTLINE_BACK_SOUTH;
                 case NORTH -> OUTLINE_BACK_NORTH;
@@ -114,16 +103,13 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
                 default    -> OUTLINE_BACK_SOUTH;
             };
         }
-
-        // FRONT block: belt-only outline — NO handlebar
         return (facing == Direction.EAST || facing == Direction.WEST)
-                ? OUTLINE_FRONT_EW
-                : OUTLINE_FRONT_NS;
+                ? OUTLINE_FRONT_EW : OUTLINE_FRONT_NS;
     }
 
     @Override
-    protected VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        // Belt only — handlebars are purely visual and never block movement.
+    protected VoxelShape getCollisionShape(BlockState state, BlockView world,
+                                           BlockPos pos, ShapeContext context) {
         Direction facing = state.get(FACING);
         return (facing == Direction.EAST || facing == Direction.WEST) ? COL_EW : COL_NS;
     }
@@ -132,9 +118,9 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Nullable
     public BlockState getPlacementState(ItemPlacementContext ctx) {
         Direction facing = ctx.getHorizontalPlayerFacing().getOpposite();
-        BlockPos pos = ctx.getBlockPos();
-        BlockPos front = pos.offset(facing);
-        World world = ctx.getWorld();
+        BlockPos pos     = ctx.getBlockPos();
+        BlockPos front   = pos.offset(facing);
+        World world      = ctx.getWorld();
         if (!world.getBlockState(front).canReplace(ctx)) return null;
         return this.getDefaultState()
                 .with(FACING, facing)
@@ -144,8 +130,8 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     public void onPlaced(World world, BlockPos pos, BlockState state,
                          @Nullable LivingEntity placer, ItemStack stack) {
-        Direction facing = state.get(FACING);
-        world.setBlockState(pos.offset(facing), state.with(PART, Part.FRONT), 3);
+        world.setBlockState(pos.offset(state.get(FACING)),
+                state.with(PART, Part.FRONT), 3);
     }
 
     @Override
@@ -163,7 +149,8 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
         if (!world.isClient) {
-            BlockPos other = pos.offset(getDirectionTowardsOtherPart(state.get(PART), state.get(FACING)));
+            BlockPos other = pos.offset(
+                    getDirectionTowardsOtherPart(state.get(PART), state.get(FACING)));
             BlockState otherState = world.getBlockState(other);
             if (otherState.isOf(this) && otherState.get(PART) != state.get(PART)) {
                 world.setBlockState(other, Blocks.AIR.getDefaultState(),
@@ -179,8 +166,8 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
         if (world.isClient) return ActionResult.SUCCESS;
 
         Direction facing = state.get(FACING);
-        Part part = state.get(PART);
-        BlockPos backPos = (part == Part.BACK) ? pos : pos.offset(facing.getOpposite());
+        Part      part   = state.get(PART);
+        BlockPos  backPos  = (part == Part.BACK) ? pos : pos.offset(facing.getOpposite());
         BlockState backState = world.getBlockState(backPos);
         BlockEntity be = world.getBlockEntity(backPos);
         if (!(be instanceof TreadmillBlockEntity treadmill)) return ActionResult.PASS;
@@ -188,25 +175,32 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
         Box search = new Box(backPos).expand(10.0);
         List<MobEntity> mobs = world.getEntitiesByClass(
                 MobEntity.class, search,
-                m -> m.isLeashed() && m.getLeashHolder() instanceof PlayerEntity lp
+                m -> m.isLeashed()
+                        && m.getLeashHolder() instanceof PlayerEntity lp
                         && lp.getUuid().equals(player.getUuid()));
-
         if (mobs.isEmpty()) return ActionResult.PASS;
+
         MobEntity mob = mobs.get(0);
 
+        // Place mob at the boundary between BACK and FRONT blocks.
+        // This matches computeTreadmillPivot exactly so onSteppedOn
+        // accepts it immediately. The pig's body straddles the seam,
+        // putting its snout into the BACK block at the console panel.
         double x = switch (facing) {
             case WEST -> backPos.getX();
-            case EAST -> backPos.getX() + 1;
-            default   -> backPos.getX() + 0.5D;
+            case EAST -> backPos.getX() + 1.0;
+            default   -> backPos.getX() + 0.5;
         };
         double y = backPos.getY() + 0.175;
         double z = switch (facing) {
-            case SOUTH -> backPos.getZ() + 1;
+            case SOUTH -> backPos.getZ() + 1.0;
             case NORTH -> backPos.getZ();
-            default    -> backPos.getZ() + 0.5D;
+            default    -> backPos.getZ() + 0.5;
         };
 
-        mob.updatePositionAndAngles(x, y, z, facing.asRotation(), 0);
+        // facing.getOpposite() = pig looks TOWARD the console (into BACK block).
+        float yaw = facing.getOpposite().asRotation();
+        mob.updatePositionAndAngles(x, y, z, yaw, 0);
         mob.detachLeash(true, false);
         if (!player.isCreative()) {
             player.getInventory().insertStack(new ItemStack(Items.LEAD));
@@ -218,15 +212,16 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
     @Override
     @Environment(EnvType.CLIENT)
     public void randomDisplayTick(BlockState state, World world, BlockPos pos, Random random) {
-        Part part = state.get(PART);
+        Part      part   = state.get(PART);
         Direction facing = state.get(FACING);
-        BlockEntity first = world.getBlockEntity(pos);
-        BlockEntity second = world.getBlockEntity(pos.offset(getDirectionTowardsOtherPart(part, facing)));
-        if (!(first instanceof TreadmillBlockEntity firstT)
+        BlockEntity first  = world.getBlockEntity(pos);
+        BlockEntity second = world.getBlockEntity(
+                pos.offset(getDirectionTowardsOtherPart(part, facing)));
+        if (!(first  instanceof TreadmillBlockEntity firstT)
                 || !(second instanceof TreadmillBlockEntity secondT)) return;
 
-        TreadmillBlockEntity back  = (part == Part.BACK)  ? firstT : secondT;
-        TreadmillBlockEntity front = (part == Part.BACK)  ? secondT : firstT;
+        TreadmillBlockEntity back  = (part == Part.BACK) ? firstT  : secondT;
+        TreadmillBlockEntity front = (part == Part.BACK) ? secondT : firstT;
 
         if (back.isOverheated()) {
             double x = front.getPos().getX() + random.nextDouble();
@@ -269,12 +264,9 @@ public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntity
 
     public enum Part implements StringIdentifiable {
         FRONT("front"), BACK("back");
-
         private final String name;
-
         Part(String name) { this.name = name; }
-
-        @Override public String toString()   { return name; }
-        @Override public String asString()   { return name; }
+        @Override public String toString()  { return name; }
+        @Override public String asString()  { return name; }
     }
 }

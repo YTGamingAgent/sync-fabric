@@ -4,6 +4,9 @@ import com.mojang.serialization.MapCodec;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.ShapeContext;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.block.enums.DoubleBlockHalf;
@@ -152,6 +155,13 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
                 && world.getBlockEntity(pos) instanceof ShellStorageBlockEntity be) {
             be.onEntityCollisionClient(entity, state);
         }
+    }
+
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockView world,
+                                           BlockPos pos, ShapeContext context) {
+        // When the door is open, remove all collision so the player can walk in
+        return isOpen(state) ? VoxelShapes.empty() : VoxelShapes.fullCube();
     }
 
     // ── Comparator output ─────────────────────────────────────────────────────

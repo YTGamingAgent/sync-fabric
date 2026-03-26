@@ -106,6 +106,11 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
 
     @Nullable
     private PlayerSyncEvents.ShellConstructionFailureReason beginShellConstruction(PlayerEntity player) {
+        // Only allow shell creation on the BOTTOM half
+        if (!AbstractShellContainerBlock.isBottom(this.getCachedState())) {
+            return PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
+        }
+
         PlayerSyncEvents.ShellConstructionFailureReason failureReason = this.shell == null
                 ? PlayerSyncEvents.ALLOW_SHELL_CONSTRUCTION.invoker().allowShellConstruction(player, this)
                 : PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
@@ -116,18 +121,17 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
 
         if (player instanceof ServerPlayerEntity serverPlayer) {
             SyncConfig config = Sync.getConfig();
-
             float damage = serverPlayer.server.isHardcore() ? config.hardcoreFingerstickDamage() : config.fingerstickDamage();
-
             boolean isCreative = !serverPlayer.interactionManager.getGameMode().isSurvivalLike();
             boolean isLowOnHealth = (player.getHealth() + player.getAbsorptionAmount()) <= damage;
             boolean hasTotemOfUndying = player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING) || player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING);
+
             if (isLowOnHealth && !isCreative && !hasTotemOfUndying && config.warnPlayerInsteadOfKilling()) {
                 return PlayerSyncEvents.ShellConstructionFailureReason.NOT_ENOUGH_HEALTH;
             }
 
             player.damage(world.getDamageSources().sweetBerryBush(), damage);
-            this.shell = ShellState.empty(serverPlayer, pos);
+            this.shell = ShellState.empty(serverPlayer, this.pos);  // store on THIS (which is BOTTOM)
             if (isCreative && config.enableInstantShellConstruction()) {
                 this.shell.setProgress(ShellState.PROGRESS_DONE);
             }

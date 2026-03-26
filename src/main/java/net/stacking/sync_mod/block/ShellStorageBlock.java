@@ -18,6 +18,11 @@ import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldAccess;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.world.World;
+import net.minecraft.util.math.Direction;
 import net.stacking.sync_mod.block.entity.ShellStorageBlockEntity;
 import net.stacking.sync_mod.block.entity.SyncBlockEntities;
 
@@ -120,7 +125,21 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
         };
     }
 
-    // ── Redstone detection ────────────────────────────────────────────────────
+    @Override
+    protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand) {
+        if (world.isClient) return ActionResult.SUCCESS;
+
+        // If TOP half, forward to BOTTOM half
+        if (state.get(HALF) == DoubleBlockHalf.UPPER) {
+            pos = pos.offset(Direction.DOWN);
+            state = world.getBlockState(pos);
+        }
+
+        if (!(world.getBlockEntity(pos) instanceof ShellStorageBlockEntity be)) return ActionResult.PASS;
+        return be.onUse(world, pos, player, hand);
+    }
+
+    // ── Redstone detection
 
     @Override
     public void onBlockAdded(BlockState state, World world, BlockPos pos,
@@ -173,6 +192,13 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
     @Override
     public void onEntityCollision(BlockState state, World world, BlockPos pos, Entity entity) {
         if (!world.isClient) return;
+
+        // If TOP half, forward collision to BOTTOM half
+        if (state.get(HALF) == DoubleBlockHalf.UPPER) {
+            pos = pos.offset(Direction.DOWN);
+            state = world.getBlockState(pos);
+        }
+
         if (state.get(HALF) != DoubleBlockHalf.LOWER) return;
         if (!(world.getBlockEntity(pos) instanceof ShellStorageBlockEntity be)) return;
         be.onEntityCollisionClient(entity, state);

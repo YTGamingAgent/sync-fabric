@@ -16,6 +16,7 @@ import net.stacking.sync_mod.util.BlockPosUtil;
 import net.stacking.sync_mod.entity.PersistentCameraEntity;
 import net.stacking.sync_mod.entity.PersistentCameraEntityGoal;
 import net.stacking.sync_mod.util.WorldUtil;
+import net.stacking.sync_mod.block.entity.ShellConstructorBlockEntity;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.MinecraftClient;
@@ -101,6 +102,12 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
     @Override
     public void endSync(Identifier startWorld, BlockPos startPos, Direction startFacing, Identifier targetWorld, BlockPos targetPos, Direction targetFacing, @Nullable ShellState storedState) {
         ClientPlayerEntity player = (ClientPlayerEntity)(Object)this;
+
+        // ── Restore original body visibility ──
+        player.setInvisible(false);
+        player.setNoGravity(false);
+
+        // ... rest of method
         boolean syncFailed = Objects.equals(startPos, targetPos);
 
         if (!syncFailed) {

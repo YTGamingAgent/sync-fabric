@@ -292,6 +292,14 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         this.teleport(targetWorld, targetState.getPos());
         this.isArtificial = targetState.isArtificial();
 
+        // ── Hide the original player body since they're now in a shell ──
+        // The body will be restored when they exit the shell
+        if (!targetState.isArtificial()) {
+            this.setInvisible(true);  // Hide original body
+            this.setNoGravity(true);   // Prevent it from falling
+        }
+        storedState.setHealth(0.01f);
+
         PlayerInventory inventory = this.getInventory();
         int selectedSlot = inventory.selectedSlot;
         targetState.getInventory().copyTo(inventory);

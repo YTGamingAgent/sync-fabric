@@ -19,13 +19,18 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
 
     public TreadmillBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
         super(new GeoModel<TreadmillBlockEntity>() {
-            @Override public Identifier getModelResource(TreadmillBlockEntity a) {
+            @Override
+            public Identifier getModelResource(TreadmillBlockEntity a) {
                 return Identifier.of("sync", "geo/treadmill.geo.json");
             }
-            @Override public Identifier getTextureResource(TreadmillBlockEntity a) {
+
+            @Override
+            public Identifier getTextureResource(TreadmillBlockEntity a) {
                 return Identifier.of("sync", "textures/block/treadmill.png");
             }
-            @Override public Identifier getAnimationResource(TreadmillBlockEntity a) {
+
+            @Override
+            public Identifier getAnimationResource(TreadmillBlockEntity a) {
                 return null;
             }
         });
@@ -39,7 +44,8 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
 
     // Suppress GeckoLib's built-in block rotation — we handle it ourselves below.
     @Override
-    protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
+    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
+    }
 
     @Override
     public void preRender(MatrixStack poseStack,
@@ -65,5 +71,14 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
         Direction facing = state.get(TreadmillBlock.FACING);
         poseStack.translate(0.5, 0.0, 0.5);
         poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-facing.asRotation()));
+    }
+
+    @Override
+    public float getMotionAnimThreshold(TreadmillBlockEntity animatable) {
+        return -1f;  // Negative value disables motion-based culling
+    }
+
+    public boolean shouldShowAsAnimated(TreadmillBlockEntity animatable) {
+        return true;  // Force as animated to prevent culling
     }
 }

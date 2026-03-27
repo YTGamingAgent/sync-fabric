@@ -88,7 +88,18 @@ public abstract class AbstractShellContainerBlock extends BlockWithEntity {
     }
 
     public static void setOpen(BlockState state, World world, BlockPos pos, boolean open) {
-        world.setBlockState(pos, state.with(OPEN, open), 3);
+        // Update this half
+        if (state.get(OPEN) != open) {
+            world.setBlockState(pos, state.with(OPEN, open), 3);
+        }
+        // Also update the other half — both halves must agree on OPEN so the
+        // upper half's collision shape matches and players can physically enter.
+        Direction toOther = state.get(HALF) == DoubleBlockHalf.LOWER ? Direction.UP : Direction.DOWN;
+        BlockPos otherPos = pos.offset(toOther);
+        BlockState otherState = world.getBlockState(otherPos);
+        if (otherState.isOf(state.getBlock()) && otherState.get(OPEN) != open) {
+            world.setBlockState(otherPos, otherState.with(OPEN, open), 3);
+        }
     }
 
     @Override
@@ -204,13 +215,13 @@ public abstract class AbstractShellContainerBlock extends BlockWithEntity {
         return ActionResult.PASS;
     }
 
-    // ── FIX #4: Ticker — avoid wildcard capture problem ──────────────────────
+    // ── FIX #4: Ticker — avoid wildcard capture problem
     /**
      * createTickerHelper() cannot infer types when getExpectedBlockEntityType()
      * returns BlockEntityType<?>. The solution is to use a generic helper method
      * that captures the wildcard properly, avoiding the raw-type inference failure.
      */
-    // ── Ticker ────────────────────────────────────────────────────────────────────
+    // ── Ticker
     /**
      * We bypass createTickerHelper() entirely because it cannot resolve the
      * wildcard capture from getExpectedBlockEntityType() returning BlockEntityType<?>.

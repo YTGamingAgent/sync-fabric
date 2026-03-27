@@ -81,16 +81,16 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
     public void onServerTick(World world, BlockPos pos, BlockState state) {
         super.onServerTick(world, pos, state);
 
-        // ── Clear completed shell ────────────────────────────────────────
-        // When construction is done, remove the shell so a new one can start
-        if (this.shell != null && this.shell.getProgress() >= ShellState.PROGRESS_DONE) {
-            this.shell = null;
-            this.markDirty();
-        }
-
-        if (ShellConstructorBlock.isOpen(state)) {
-            ShellConstructorBlock.setOpen(state, world, pos, BlockPosUtil.hasPlayerInside(pos, world));
-        }
+        // ── Door open/close ──────────────────────────────────────────────
+        // The doors open ONLY when a player's consciousness is physically
+        // present inside (i.e. after they sync via shell storage and teleport
+        // into the newly built body).  They stay closed during construction.
+        //
+        // The original code had an `if (isOpen)` guard that prevented the door
+        // from ever opening — removing that guard fixes it while keeping the
+        // correct trigger: hasPlayerInside, not "shell != null".
+        ShellConstructorBlock.setOpen(state, world, pos,
+                BlockPosUtil.hasPlayerInside(pos, world));
     }
 
     @Override
@@ -113,8 +113,15 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
         }
 
         // ── AGGRESSIVE CLEAR: Remove ANY existing shell to make room ──────────────
-        // Don't wait for 100% — just clear it so we can create a fresh one
+        // Don't wait for 100% — just clear it so we can create a fresh one.
+        // IMPORTANT: remove from the global shell manager BEFORE nulling the local
+        // reference, otherwise the old ShellState stays registered in the player's
+        // shellsById map and causes a ghost shell (two entries for the same slot,
+        // the old one never cleaned up when the block is broken later).
         if (this.shell != null) {
+            if (this.world != null && !this.world.isClient) {
+                this.getShellStateManager().remove(this.shell);
+            }
             this.shell = null;
             this.markDirty();
         }

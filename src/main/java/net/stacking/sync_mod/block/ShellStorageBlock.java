@@ -93,24 +93,39 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
     @Override
     protected BlockEntityType<?> getExpectedBlockEntityType() { return SyncBlockEntities.SHELL_STORAGE; }
 
-    // ── Static helpers ────────────────────────────────────────────────────────
+    // ── Static helpers
 
     public static boolean isEnabled(BlockState state) { return state.get(ENABLED); }
     public static boolean isPowered(BlockState state)  { return state.get(POWERED);  }
 
-    // ── Collision shape ───────────────────────────────────────────────────────
+    // ── Collision shape
 
     public static void setPowered(BlockState state, World world, BlockPos pos, boolean powered) {
-        BlockState liveState = world.getBlockState(pos);  // ← read CURRENT state
-        if (liveState.get(POWERED) != powered) {
+        // pos is always the LOWER half (ticker only runs on LOWER half).
+        // We must update BOTH halves so their states stay in sync.
+        BlockState liveState = world.getBlockState(pos);
+        if (liveState.isOf(SyncBlocks.SHELL_STORAGE) && liveState.get(POWERED) != powered) {
             world.setBlockState(pos, liveState.with(POWERED, powered), Block.NOTIFY_ALL);
+        }
+        BlockPos upperPos = pos.up();
+        BlockState upperState = world.getBlockState(upperPos);
+        if (upperState.isOf(SyncBlocks.SHELL_STORAGE) && upperState.get(POWERED) != powered) {
+            world.setBlockState(upperPos, upperState.with(POWERED, powered), Block.NOTIFY_ALL);
         }
     }
 
     public static void setOpen(BlockState state, World world, BlockPos pos, boolean open) {
-        BlockState liveState = world.getBlockState(pos);  // ← read CURRENT state
-        if (liveState.get(OPEN) != open) {
+        // pos is always the LOWER half (ticker only runs on LOWER half).
+        // BOTH halves need OPEN=true so the upper half's getCollisionShape() also
+        // returns the open shape, allowing the player to physically walk inside.
+        BlockState liveState = world.getBlockState(pos);
+        if (liveState.isOf(SyncBlocks.SHELL_STORAGE) && liveState.get(OPEN) != open) {
             world.setBlockState(pos, liveState.with(OPEN, open), Block.NOTIFY_ALL);
+        }
+        BlockPos upperPos = pos.up();
+        BlockState upperState = world.getBlockState(upperPos);
+        if (upperState.isOf(SyncBlocks.SHELL_STORAGE) && upperState.get(OPEN) != open) {
+            world.setBlockState(upperPos, upperState.with(OPEN, open), Block.NOTIFY_ALL);
         }
     }
 
@@ -162,7 +177,7 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
         updateEnabled(world, pos, state);
     }
 
-    // ── FIX for vertical double-blocks (LOWER/UPPER) ────────────────────────
+    // ── FIX for vertical double-blocks (LOWER/UPPER)
     @Override
     public BlockState getStateForNeighborUpdate(BlockState state, Direction direction,
                                                 BlockState neighborState, WorldAccess world,
@@ -204,7 +219,7 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
         }
     }
 
-    // ── Entity collision ──────────────────────────────────────────────────────
+    // ── Entity collision
 
     @Override
     public void onEntityCollision(BlockState state, World world, BlockPos pos, Entity entity) {
@@ -234,7 +249,7 @@ public class ShellStorageBlock extends AbstractShellContainerBlock {
         be.onEntityCollisionClient(entity, targetState);
     }
 
-    // ── Comparator output ─────────────────────────────────────────────────────
+    // ── Comparator output
 
     @Override public boolean hasComparatorOutput(BlockState state) { return true; }
 

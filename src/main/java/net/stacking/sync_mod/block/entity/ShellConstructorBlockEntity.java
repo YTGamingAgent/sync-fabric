@@ -7,26 +7,21 @@ import net.stacking.sync_mod.api.event.PlayerSyncEvents;
 import net.stacking.sync_mod.block.AbstractShellContainerBlock;
 import net.stacking.sync_mod.block.ShellConstructorBlock;
 import net.stacking.sync_mod.config.SyncConfig;
-import net.stacking.sync_mod.entity.damage.FingerstickDamageSource;
 import net.stacking.sync_mod.Sync;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.minecraft.block.BlockState;
-import net.minecraft.entity.damage.DamageTypes;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
-import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoBlockEntity;
 import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.animation.AnimatableManager;
 import software.bernie.geckolib.animation.AnimationController;
-import software.bernie.geckolib.animation.AnimationState;
 import software.bernie.geckolib.animation.PlayState;
 import software.bernie.geckolib.animation.RawAnimation;
 import software.bernie.geckolib.util.GeckoLibUtil;
@@ -75,26 +70,23 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
         return cache;
     }
 
-    // ---- Original logic (unchanged) --------------------------------------------
+    // ---- Shell Construction Logic -----------------------------------------------
 
     @Override
     public void onServerTick(World world, BlockPos pos, BlockState state) {
         super.onServerTick(world, pos, state);
 
-        // ── Door open/close ──────────────────────────────────────────────
-        // The doors open ONLY when a player's consciousness is physically
-        // present inside (i.e. after they sync via shell storage and teleport
-        // into the newly built body).  They stay closed during construction.
-        //
-        // The original code had an `if (isOpen)` guard that prevented the door
-        // from ever opening — removing that guard fixes it while keeping the
-        // correct trigger: hasPlayerInside, not "shell != null".
-        ShellConstructorBlock.setOpen(state, world, pos,
-                BlockPosUtil.hasPlayerInside(pos, world));
+        // ── Door logic ───────────────────────────────────────────────────
+        // Doors open ONLY when player is inside (after syncing into shell)
+        // Doors stay CLOSED during construction (shell != 100%)
+        boolean shouldOpen = BlockPosUtil.hasPlayerInside(pos, world);
+        ShellConstructorBlock.setOpen(state, world, pos, shouldOpen);
     }
 
     @Override
     public ActionResult onUse(World world, BlockPos pos, PlayerEntity player, Hand hand) {
+        if (world.isClient) return ActionResult.SUCCESS;
+
         PlayerSyncEvents.ShellConstructionFailureReason failureReason = this.beginShellConstruction(player);
         if (failureReason == null) {
             return ActionResult.SUCCESS;
@@ -112,12 +104,8 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
             return PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
         }
 
-        // ── AGGRESSIVE CLEAR: Remove ANY existing shell to make room ──────────────
-        // Don't wait for 100% — just clear it so we can create a fresh one.
-        // IMPORTANT: remove from the global shell manager BEFORE nulling the local
-        // reference, otherwise the old ShellState stays registered in the player's
-        // shellsById map and causes a ghost shell (two entries for the same slot,
-        // the old one never cleaned up when the block is broken later).
+        // ── Clear old shell before creating new one ──────────────────────────
+        // Remove from global manager to prevent ghost shells
         if (this.shell != null) {
             if (this.world != null && !this.world.isClient) {
                 this.getShellStateManager().remove(this.shell);
@@ -157,6 +145,8 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
         }
         return null;
     }
+
+    // ---- Energy Storage ---------------------------------------------------------
 
     @Override
     public long getAmount() {

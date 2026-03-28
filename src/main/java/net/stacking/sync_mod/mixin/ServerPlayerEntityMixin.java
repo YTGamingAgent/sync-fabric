@@ -7,6 +7,7 @@ import net.stacking.sync_mod.api.networking.PlayerIsAlivePacket;
 import net.stacking.sync_mod.api.networking.ShellStateUpdatePacket;
 import net.stacking.sync_mod.api.networking.ShellUpdatePacket;
 import net.stacking.sync_mod.api.shell.*;
+import net.stacking.sync_mod.block.entity.ShellStorageBlockEntity;
 import net.stacking.sync_mod.entity.KillableEntity;
 import net.stacking.sync_mod.util.BlockPosUtil;
 import net.stacking.sync_mod.util.WorldUtil;
@@ -18,6 +19,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.network.packet.s2c.play.*;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.scoreboard.AbstractTeam;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
@@ -270,9 +272,9 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         ServerPlayerEntity serverPlayer = (ServerPlayerEntity) (Object) this;
         ServerWorld targetWorld = this.server.getWorld(targetState.getWorld() != null
                 ? this.server.getWorldRegistryKeys().stream()
-                .filter(key -> key.getValue().equals(targetState.getWorld()))
-                .findFirst()
-                .orElse(this.getServerWorld().getRegistryKey())
+                  .filter(key -> key.getValue().equals(targetState.getWorld()))
+                  .findFirst()
+                  .orElse(this.getServerWorld().getRegistryKey())
                 : this.getServerWorld().getRegistryKey());
 
         if (targetWorld == null) {
@@ -289,14 +291,13 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         this.clearStatusEffects();
 
         new PlayerIsAlivePacket(serverPlayer).send(this.server.getPlayerManager().getPlayerList());
-        this.teleport(targetWorld, targetState.getPos());
+        this.setWorld(targetWorld);
+        this.setPos(targetState.getPos().getX() + 0.5, targetState.getPos().getY(), targetState.getPos().getZ() + 0.5);
         this.isArtificial = targetState.isArtificial();
 
-        // ── Hide the original player body since they're now in a shell ──
-        // The body will be restored when they exit the shell
         if (!targetState.isArtificial()) {
-            this.setInvisible(true);  // Hide original body
-            this.setNoGravity(true);   // Prevent it from falling
+            this.setInvisible(true);
+            this.setNoGravity(true);
         }
         storedState.setHealth(0.01f);
 
@@ -326,6 +327,41 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         this.syncedFoodLevel = -1;
         this.shellDirty = true;
 
+        ServerWorld currentWorld = this.getServerWorld();
+        ShellStorageBlockEntity primaryStorage = null;
+
+        BlockPos playerPos = serverPlayer.getBlockPos();
+        int searchRadius = 128;
+
+        for (int x = playerPos.getX() - searchRadius; x <= playerPos.getX() + searchRadius; x += 16) {
+            for (int y = playerPos.getY() - searchRadius; y <= playerPos.getY() + searchRadius; y += 16) {
+                for (int z = playerPos.getZ() - searchRadius; z <= playerPos.getZ() + searchRadius; z += 16) {
+                    BlockPos checkPos = new BlockPos(x, y, z);
+                    BlockEntity blockEntity = currentWorld.getBlockEntity(checkPos);
+                    if (blockEntity instanceof ShellStorageBlockEntity storage && storage.isPrimaryStorage()) {
+                        primaryStorage = storage;
+                        break;
+                    }
+                }
+                if (primaryStorage != null) break;
+            }
+            if (primaryStorage != null) break;
+        }
+
+        if (primaryStorage != null) {
+            primaryStorage.setShellState(storedState);
+            this.add(storedState);
+        }
+
+        // Clear constructor and store body - simpler, more direct approach
+        ShellStateContainer constructorContainer = ShellStateContainer.find(currentWorld, targetState);
+        if (constructorContainer != null) {
+            constructorContainer.setShellState(null);
+            this.remove(targetState);
+        } else {
+            // Fallback: remove from shells list directly
+            this.remove(targetState);
+        }
         return Either.left(storedState);
     }
 
@@ -353,93 +389,20 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
             ShellState state = update.getRight();
             switch (update.getLeft()) {
                 case ADD, UPDATE -> {
-                    if (this.uuid.equals(state.getOwnerUuid())) {
+                    if (this.canBeApplied(state)) {
                         this.shellsById.put(state.getUuid(), state);
                     }
                 }
                 case REMOVE -> this.shellsById.remove(state.getUuid());
             }
         }
-
-        this.shellStateChanges = new HashMap<>();
-        this.shellDirty = true;
     }
 
-    @Inject(method = "copyFrom", at = @At("HEAD"))
+    @Inject(method = "copyFrom", at = @At("TAIL"))
     private void copyFrom(ServerPlayerEntity oldPlayer, boolean alive, CallbackInfo ci) {
-        Shell shell = (Shell) oldPlayer;
-        this.isArtificial = alive && shell.isArtificial();
-        this.shellsById = shell.getAvailableShellStates()
-                .collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
-        this.shellStateChanges = new HashMap<>();
-        this.shellDirty = true;
-    }
-
-    @Inject(method = "setServerWorld", at = @At("HEAD"))
-    private void setWorld(ServerWorld world, CallbackInfo ci) {
-        if (world != this.getWorld()) {
-            this.shellDirty = true;
-        }
-    }
-
-    @Unique
-    private void teleport(ServerWorld targetWorld, BlockPos pos) {
-        this.inTeleportationState = true;
-        Chunk chunk = targetWorld.getChunk(pos);
-        double x = pos.getX() + 0.5;
-        double y = pos.getY();
-        double z = pos.getZ() + 0.5;
-        float yaw = BlockPosUtil.getHorizontalFacing(pos, chunk)
-                .map(d -> d.getOpposite().asRotation())
-                .orElse(0F);
-        float pitch = 0;
-
-        if (this.getWorld() == targetWorld) {
-            this.networkHandler.requestTeleport(x, y, z, yaw, pitch);
-            this.onTeleportationDone();
-            return;
-        }
-
-        ServerWorld serverWorld = this.getServerWorld();
-        ServerPlayerEntity serverPlayer = (ServerPlayerEntity) (Object) this;
-
-        // FIXED: In 1.21+, PlayerRespawnS2CPacket uses CommonPlayerSpawnInfo
-        CommonPlayerSpawnInfo spawnInfo = new CommonPlayerSpawnInfo(
-                targetWorld.getDimensionEntry(),
-                targetWorld.getRegistryKey(),
-                BiomeAccess.hashSeed(targetWorld.getSeed()),
-                serverPlayer.interactionManager.getGameMode(),
-                serverPlayer.interactionManager.getPreviousGameMode(),
-                targetWorld.isDebugWorld(),
-                targetWorld.isFlat(),
-                this.getLastDeathPos(),
-                10
-        );
-        serverPlayer.networkHandler.sendPacket(new PlayerRespawnS2CPacket(spawnInfo, (byte) 1));
-
-        serverPlayer.networkHandler.sendPacket(new DifficultyS2CPacket(
-                targetWorld.getLevelProperties().getDifficulty(),
-                targetWorld.getLevelProperties().isDifficultyLocked()
-        ));
-
-        this.server.getPlayerManager().sendCommandTree(serverPlayer);
-        serverWorld.removePlayer(serverPlayer, RemovalReason.CHANGED_DIMENSION);
-        this.unsetRemoved();
-        serverPlayer.setWorld(targetWorld);
-
-        targetWorld.onDimensionChanged(serverPlayer);
-
-        this.networkHandler.requestTeleport(x, y, z, yaw, pitch);
-        this.worldChanged(targetWorld);
-        serverPlayer.networkHandler.sendPacket(new PlayerAbilitiesS2CPacket(serverPlayer.getAbilities()));
-        this.server.getPlayerManager().sendWorldInfo(serverPlayer, targetWorld);
-        this.server.getPlayerManager().sendPlayerStatus(serverPlayer);
-
-        for (StatusEffectInstance statusEffectInstance : this.getStatusEffects()) {
-            this.networkHandler.sendPacket(new EntityStatusEffectS2CPacket(this.getId(), statusEffectInstance, true));
-        }
-
-        this.onTeleportationDone();
+        ServerShell oldShell = (ServerShell) oldPlayer;
+        this.shellsById = oldShell.getAvailableShellStates().collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
+        this.isArtificial = oldShell.isArtificial();
     }
 
     @Shadow
@@ -455,9 +418,6 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
     public abstract boolean isInTeleportationState();
 
     @Shadow
-    private boolean inTeleportationState;
-
-    @Shadow
     public abstract void onTeleportationDone();
 
     @Unique
@@ -467,10 +427,10 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
 
     @Unique
     private Shell getShellById(UUID id) {
-        return id == null ? null : (Shell) this.server.getPlayerManager().getPlayer(id);
+        return (Shell)this.shellsById.get(id);
     }
 
-    @Unique
+    @Override
     public boolean canBeApplied(ShellState state) {
         return state != null && this.uuid.equals(state.getOwnerUuid());
     }

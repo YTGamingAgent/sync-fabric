@@ -9,6 +9,7 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
+import net.minecraft.util.math.Box;
 import net.stacking.sync_mod.block.TreadmillBlock;
 import net.stacking.sync_mod.block.entity.TreadmillBlockEntity;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
@@ -76,6 +77,14 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
     @Override
     public float getMotionAnimThreshold(TreadmillBlockEntity animatable) {
         return -1f;  // Negative value disables motion-based culling
+    }
+
+    @Override
+    public Box getRenderBoundingBox(TreadmillBlockEntity blockEntity) {
+        // Expand the culling bounding box to prevent frustum culling when the camera
+        // is inside nearby structures (like the shell constructor).
+        // This ensures the treadmill remains visible even when viewed from inside.
+        return Box.INFINITE;
     }
 
     public boolean shouldShowAsAnimated(TreadmillBlockEntity animatable) {

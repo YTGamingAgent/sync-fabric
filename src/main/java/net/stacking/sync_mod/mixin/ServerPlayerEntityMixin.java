@@ -293,6 +293,16 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         new PlayerIsAlivePacket(serverPlayer).send(this.server.getPlayerManager().getPlayerList());
         this.setWorld(targetWorld);
         this.setPos(targetState.getPos().getX() + 0.5, targetState.getPos().getY(), targetState.getPos().getZ() + 0.5);
+
+        // Set yaw to face out through shell storage doors
+        BlockEntity storageEntity = targetWorld.getBlockEntity(targetState.getPos());
+        if (storageEntity instanceof ShellStorageBlockEntity storage) {
+            Direction facing = storage.getCachedState().get(net.minecraft.state.property.Properties.FACING);
+            float yaw = facing.asRotation();
+            this.setYaw(yaw);
+            this.setPitch(0);
+        }
+
         this.isArtificial = targetState.isArtificial();
 
         if (!targetState.isArtificial()) {
@@ -350,13 +360,16 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
 
         if (primaryStorage != null) {
             primaryStorage.setShellState(storedState);
+            primaryStorage.sync();  // Explicitly sync to persist the stored body to disk
             this.add(storedState);
         }
 
-        // Clear constructor and store body - simpler, more direct approach
         ShellStateContainer constructorContainer = ShellStateContainer.find(currentWorld, targetState);
         if (constructorContainer != null) {
             constructorContainer.setShellState(null);
+            if (constructorContainer instanceof ShellStorageBlockEntity storage) {
+                storage.sync();  // Persist the cleared state
+            }
             this.remove(targetState);
         } else {
             // Fallback: remove from shells list directly

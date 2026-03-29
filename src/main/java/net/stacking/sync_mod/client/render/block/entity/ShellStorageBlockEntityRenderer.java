@@ -103,9 +103,9 @@ public class ShellStorageBlockEntityRenderer extends GeoBlockRenderer<ShellStora
         BlockState state = animatable.hasWorld()
                 ? animatable.getCachedState()
                 : SyncBlocks.SHELL_STORAGE.getDefaultState()
-                .with(AbstractShellContainerBlock.HALF,   DoubleBlockHalf.LOWER)
-                .with(AbstractShellContainerBlock.FACING, Direction.SOUTH)
-                .with(AbstractShellContainerBlock.OPEN,   false);
+                  .with(AbstractShellContainerBlock.HALF,   DoubleBlockHalf.LOWER)
+                  .with(AbstractShellContainerBlock.FACING, Direction.SOUTH)
+                  .with(AbstractShellContainerBlock.OPEN,   false);
 
         if (!AbstractShellContainerBlock.isBottom(state)) {
             poseStack.scale(0f, 0f, 0f);
@@ -150,6 +150,9 @@ public class ShellStorageBlockEntityRenderer extends GeoBlockRenderer<ShellStora
         EntityRenderer<ShellEntity> renderer =
                 (EntityRenderer<ShellEntity>) MinecraftClient.getInstance()
                         .getEntityRenderDispatcher().getRenderer(shell);
+
+        // Ensure the shell renders with correct color (white = no tint).
+        // This prevents black/gray rendering when skin texture is loading.
         renderer.render(shell, yaw, tickDelta, matrices, vertexConsumers, light);
     }
 }

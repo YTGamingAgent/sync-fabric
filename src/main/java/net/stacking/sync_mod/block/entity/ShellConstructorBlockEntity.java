@@ -134,22 +134,35 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
         return null;
     }
 
-    // ── Server tick: door logic ──────────────────────────────────────────────
+    // ── Server tick: door logic and base progress increment ──────────────────
 
     @Override
     public void onServerTick(World world, BlockPos pos, BlockState state) {
         super.onServerTick(world, pos, state);
 
+        // Add base progress increment each tick to ensure construction completes
+        // in approximately 1200 ticks (~60 seconds) with or without treadmill energy.
+        // This makes construction time consistent regardless of animal type/treadmill output.
+        ShellConstructorBlockEntity bottom =
+                (ShellConstructorBlockEntity) this.getBottomPart().orElse(null);
+        if (bottom != null && bottom.shell != null
+                && bottom.shell.getProgress() > ShellState.PROGRESS_START
+                && bottom.shell.getProgress() < ShellState.PROGRESS_DONE) {
+            float baseIncrement = 1.0f / 1200.0f; // Complete in 1200 ticks
+            bottom.shell.setProgress(bottom.shell.getProgress() + baseIncrement);
+            if (bottom.shell.getProgress() >= ShellState.PROGRESS_DONE) {
+                bottom.shell.setProgress(ShellState.PROGRESS_DONE);
+            }
+        }
+
         boolean shellComplete = this.shell != null
                 && this.shell.getProgress() >= ShellState.PROGRESS_DONE;
         boolean playerInside  = BlockPosUtil.hasPlayerInside(pos, world);
 
-        // Doors open when the shell is done (showing it's ready for sync).
-        // Once sync() clears this.shell via setShellState(null), shellComplete
-        // becomes false. The door stays open while the player is still physically
-        // inside (second condition), then closes when they walk out.
-        boolean shouldBeOpen = shellComplete
-                || (AbstractShellContainerBlock.isOpen(state) && playerInside);
+        // Doors ONLY open when a shell is complete AND exists.
+        // Once the shell is extracted (this.shell becomes null), doors close.
+        // They don't stay open after extraction.
+        boolean shouldBeOpen = (this.shell != null && shellComplete);
 
         ShellConstructorBlock.setOpen(state, world, pos, shouldBeOpen);
     }

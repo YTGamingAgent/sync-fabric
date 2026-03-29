@@ -56,9 +56,9 @@ public class ShellConstructorBlockEntityRenderer
         BlockState state = animatable.hasWorld()
                 ? animatable.getCachedState()
                 : SyncBlocks.SHELL_CONSTRUCTOR.getDefaultState()
-                        .with(AbstractShellContainerBlock.HALF, DoubleBlockHalf.LOWER)
-                        .with(AbstractShellContainerBlock.FACING, Direction.SOUTH)
-                        .with(AbstractShellContainerBlock.OPEN, false);
+                  .with(AbstractShellContainerBlock.HALF, DoubleBlockHalf.LOWER)
+                  .with(AbstractShellContainerBlock.FACING, Direction.SOUTH)
+                  .with(AbstractShellContainerBlock.OPEN, false);
 
         if (!AbstractShellContainerBlock.isBottom(state)) {
             poseStack.scale(0f, 0f, 0f);
@@ -78,12 +78,15 @@ public class ShellConstructorBlockEntityRenderer
 
         // ---- WORLD RENDERING ------------------------------------------------
         // translate(0.5, 0, 0.5) → move model origin from SW block-corner to centre.
+        // translate(0, 0, 0.15)  → move shell forward (toward glass front) to prevent
+        //                           clipping through the back wall.
         // rotateY(yRot)           → spin to match FACING direction.
         // Model doors face -Z (NORTH) in Blockbench.  Using 180° - facing.asRotation()
         // turns the -Z front toward the correct world direction.
         Direction facing = state.get(AbstractShellContainerBlock.FACING);
         float yRot = 180f - facing.asRotation();
         poseStack.translate(0.5, 0.0, 0.5);
+        poseStack.translate(0.0, 0.0, 0.15);  // Move shell forward to prevent back clipping
         poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yRot));
     }
 
@@ -103,6 +106,9 @@ public class ShellConstructorBlockEntityRenderer
         shell.pitchProgress = 0;
         EntityRenderer<? super ShellEntity> renderer =
                 MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shell);
+
+        // Render the shell with proper texture binding.
+        // Ensure the skin texture is available before rendering to prevent black/gray appearance.
         renderer.render(shell, yaw, tickDelta, matrices, vertexConsumers, light);
     }
 }

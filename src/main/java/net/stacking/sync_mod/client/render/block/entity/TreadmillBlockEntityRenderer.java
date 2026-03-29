@@ -48,6 +48,13 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
     protected void rotateBlock(Direction facing, MatrixStack poseStack) {
     }
 
+    // Always render regardless of frustum culling — treadmills disappear
+    // when the camera is inside the constructor otherwise.
+    @Override
+    public boolean rendersOutsideBoundingBox(TreadmillBlockEntity blockEntity) {
+        return true;
+    }
+
     @Override
     public void preRender(MatrixStack poseStack,
                           TreadmillBlockEntity animatable,
@@ -77,17 +84,5 @@ public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBloc
     @Override
     public float getMotionAnimThreshold(TreadmillBlockEntity animatable) {
         return -1f;  // Negative value disables motion-based culling
-    }
-
-    @Override
-    public Box getRenderBoundingBox(TreadmillBlockEntity blockEntity) {
-        // Expand the culling bounding box to prevent frustum culling when the camera
-        // is inside nearby structures (like the shell constructor).
-        // This ensures the treadmill remains visible even when viewed from inside.
-        return Box.INFINITE;
-    }
-
-    public boolean shouldShowAsAnimated(TreadmillBlockEntity animatable) {
-        return true;  // Force as animated to prevent culling
     }
 }

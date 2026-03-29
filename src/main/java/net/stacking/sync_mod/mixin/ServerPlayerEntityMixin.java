@@ -282,7 +282,9 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         }
 
         ShellState storedState = ShellState.copy(serverPlayer, targetState.getPos());
-        storedState.setProgress(ShellState.PROGRESS_START);
+        // PROGRESS_DONE so the body is visible and selectable in the storage.
+        // (PROGRESS_START = 0 would render as nothing — the shell model is empty at 0%.)
+        storedState.setProgress(ShellState.PROGRESS_DONE);
 
         this.stopRiding();
         this.extinguish();
@@ -294,12 +296,12 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         this.setWorld(targetWorld);
         this.setPos(targetState.getPos().getX() + 0.5, targetState.getPos().getY(), targetState.getPos().getZ() + 0.5);
 
-        // Set yaw to face out through shell storage doors
-        BlockEntity storageEntity = targetWorld.getBlockEntity(targetState.getPos());
-        if (storageEntity instanceof ShellStorageBlockEntity storage) {
-            Direction facing = storage.getCachedState().get(net.minecraft.state.property.Properties.FACING);
-            float yaw = facing.asRotation();
-            this.setYaw(yaw);
+        // Set yaw so the player faces OUT through the machine's doors (works for
+        // both Shell Storage and Shell Constructor since both have a FACING property).
+        BlockEntity targetEntity = targetWorld.getBlockEntity(targetState.getPos());
+        if (targetEntity instanceof net.stacking.sync_mod.block.entity.AbstractShellContainerBlockEntity container) {
+            Direction facing = container.getCachedState().get(net.minecraft.state.property.Properties.FACING);
+            this.setYaw(facing.asRotation());
             this.setPitch(0);
         }
 
@@ -340,27 +342,29 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         ServerWorld currentWorld = this.getServerWorld();
         ShellStorageBlockEntity primaryStorage = null;
 
-        BlockPos playerPos = serverPlayer.getBlockPos();
-        int searchRadius = 128;
-
-        for (int x = playerPos.getX() - searchRadius; x <= playerPos.getX() + searchRadius; x += 16) {
-            for (int y = playerPos.getY() - searchRadius; y <= playerPos.getY() + searchRadius; y += 16) {
-                for (int z = playerPos.getZ() - searchRadius; z <= playerPos.getZ() + searchRadius; z += 16) {
-                    BlockPos checkPos = new BlockPos(x, y, z);
-                    BlockEntity blockEntity = currentWorld.getBlockEntity(checkPos);
-                    if (blockEntity instanceof ShellStorageBlockEntity storage && storage.isPrimaryStorage()) {
+        // Search every block in a 32-block horizontal / 5-block vertical radius.
+        // The old code stepped by 16 blocks and silently missed almost every position.
+        BlockPos origin = targetState.getPos();
+        outer:
+        for (int dx = -32; dx <= 32; dx++) {
+            for (int dz = -32; dz <= 32; dz++) {
+                for (int dy = -5; dy <= 5; dy++) {
+                    BlockEntity be = currentWorld.getBlockEntity(origin.add(dx, dy, dz));
+                    if (be instanceof ShellStorageBlockEntity storage && storage.isPrimaryStorage()) {
                         primaryStorage = storage;
-                        break;
+                        break outer;
                     }
                 }
-                if (primaryStorage != null) break;
             }
-            if (primaryStorage != null) break;
         }
 
         if (primaryStorage != null) {
+            // Use the storage's own position so the body appears in the storage
+            // (not at the constructor's position, which caused ghost-shell confusion).
+            storedState.setPos(primaryStorage.getPos());
             primaryStorage.setShellState(storedState);
-            primaryStorage.sync();  // Explicitly sync to persist the stored body to disk
+            primaryStorage.markDirty();
+            primaryStorage.setLocked(true);  // Lock storage until player swaps back
             this.add(storedState);
         }
 
@@ -368,7 +372,7 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         if (constructorContainer != null) {
             constructorContainer.setShellState(null);
             if (constructorContainer instanceof ShellStorageBlockEntity storage) {
-                storage.sync();  // Persist the cleared state
+                storage.markDirty();  // Persist the cleared state
             }
             this.remove(targetState);
         } else {

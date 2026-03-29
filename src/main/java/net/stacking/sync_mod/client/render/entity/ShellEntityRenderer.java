@@ -14,6 +14,7 @@ import net.minecraft.client.render.entity.model.AnimalModel;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
 
@@ -41,7 +42,12 @@ public class ShellEntityRenderer extends PlayerEntityRenderer {
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yaw));
 
             this.applyStateToModel(this.shellModel, shell.getState());
-            VertexConsumer consumer = this.getVertexConsumerForPartiallyTexturedEntity(shell, progress, this.shellModel.getLayer(shell.getSkinTexture()), vertexConsumers);
+            // Before the sprayers animation (PROGRESS_PRINTING = 0.75), the shell is
+            // uncoloured white pixels — skin texture only applies once painting starts.
+            Identifier textureToUse = (progress < ShellState.PROGRESS_PRINTING)
+                    ? Identifier.of("minecraft", "textures/block/white_wool.png")
+                    : shell.getSkinTexture();
+            VertexConsumer consumer = this.getVertexConsumerForPartiallyTexturedEntity(shell, progress, this.shellModel.getLayer(textureToUse), vertexConsumers);
             // 1.21+ models use a packed RGB tint instead of separate RGBA floats.
             this.shellModel.render(matrices, consumer, light, getOverlay(player, tickDelta), 0xFFFFFF);
             if (progress >= ShellState.PROGRESS_DONE) {

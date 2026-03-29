@@ -63,6 +63,8 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     private long storedEnergy;
     private final BooleanAnimator connectorAnimator;
     private boolean isPrimaryStorage = false;
+    /** True while the original body is stored here waiting for the owner to swap back. */
+    private boolean locked = false;
 
     public ShellStorageBlockEntity(BlockPos pos, BlockState state) {
         super(SyncBlockEntities.SHELL_STORAGE, pos, state);
@@ -111,6 +113,23 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     }
 
     public boolean isPrimaryStorage() { return this.isPrimaryStorage; }
+
+    public boolean isLocked() { return this.locked; }
+
+    public void setLocked(boolean locked) {
+        if (this.locked == locked) return;
+        this.locked = locked;
+        this.sync(); // propagate to clients so onEntityCollisionClient can check it
+    }
+
+    /** Auto-unlock when the stored body is removed (player swapped back). */
+    @Override
+    public void setShellState(net.stacking.sync_mod.api.shell.ShellState shell) {
+        super.setShellState(shell);
+        if (shell == null) {
+            this.locked = false;
+        }
+    }
 
     private void setPrimaryStorage(boolean primary) {
         if (this.isPrimaryStorage == primary) return;
@@ -205,6 +224,16 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     public void onEntityCollisionClient(Entity entity, BlockState state) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!(entity instanceof PlayerEntity player)) return;
+
+        // If the storage is locked, only the owner of the stored body may enter to swap back.
+        if (this.locked && this.shell != null) {
+            if (!this.shell.getOwnerUuid().equals(player.getUuid())) {
+                if (client.player == entity) {
+                    player.sendMessage(net.minecraft.text.Text.literal("§cThis storage is occupied — waiting for its owner to return."), true);
+                }
+                return;
+            }
+        }
 
         if (this.entityState == EntityState.NONE) {
             boolean isInside = BlockPosUtil.isEntityInside(entity, this.pos);
@@ -308,12 +337,14 @@ public class ShellStorageBlockEntity extends AbstractShellContainerBlockEntity
     public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
         super.readNbt(nbt, registryLookup);
         this.isPrimaryStorage = nbt.getBoolean("IsPrimary");
+        this.locked = nbt.getBoolean("Locked");
     }
 
     @Override
     protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
         super.writeNbt(nbt, registryLookup);
         nbt.putBoolean("IsPrimary", this.isPrimaryStorage);
+        nbt.putBoolean("Locked", this.locked);
     }
 
 

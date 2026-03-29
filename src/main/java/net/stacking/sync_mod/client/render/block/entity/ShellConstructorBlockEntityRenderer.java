@@ -46,6 +46,13 @@ public class ShellConstructorBlockEntityRenderer
     @Override
     protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
 
+    // Always render regardless of frustum culling — the 2-block-tall model
+    // disappears when the camera is inside the machine otherwise.
+    @Override
+    public boolean rendersOutsideBoundingBox(ShellConstructorBlockEntity blockEntity) {
+        return true;
+    }
+
     @Override
     public void preRender(MatrixStack poseStack,
                           ShellConstructorBlockEntity animatable,

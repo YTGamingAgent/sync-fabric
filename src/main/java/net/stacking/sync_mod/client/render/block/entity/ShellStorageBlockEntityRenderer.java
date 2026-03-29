@@ -53,6 +53,13 @@ public class ShellStorageBlockEntityRenderer extends GeoBlockRenderer<ShellStora
     @Override
     protected void rotateBlock(Direction facing, MatrixStack poseStack) {}
 
+    // Always render regardless of frustum culling — the 2-block-tall model
+    // disappears when the camera is inside a nearby machine otherwise.
+    @Override
+    public boolean rendersOutsideBoundingBox(ShellStorageBlockEntity blockEntity) {
+        return true;
+    }
+
     // ── Colour the indicator bone each frame
     // GeckoLib calls renderRecursively for every bone.  When we hit the
     // indicator bone we swap the packed ARGB colour to the DyeColor the

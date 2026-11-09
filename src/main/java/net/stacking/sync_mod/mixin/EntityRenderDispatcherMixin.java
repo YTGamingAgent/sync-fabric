@@ -94,7 +94,7 @@ abstract class EntityRenderDispatcherMixin {
     private Map<String, ShellEntityRenderer> shellRenderers = ImmutableMap.of();
 
     @SuppressWarnings("unchecked")
-    @Inject(method = "getRenderer", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getRenderer(Lnet/minecraft/world/entity/Entity;)Lnet/minecraft/client/renderer/entity/EntityRenderer;", at = @At("HEAD"), cancellable = true)
     //? if >=1.21.2 {
     /*private <T extends Entity> void getRenderer(T entity, CallbackInfoReturnable<EntityRenderer<? super T, ?>> cir) {
     *///?} else

@@ -427,6 +427,24 @@ abstract class ServerPlayerEntityMixin extends Player implements ServerShell, Ki
     protected abstract void tellNeutralMobsThatIDied();
 
 
+    //? if >=1.21.6 {
+    /*// Since 1.21.6 entities save through ValueOutput/ValueInput; the keys and format are the same as before.
+    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
+    private void writeCustomDataToNbt(net.minecraft.world.level.storage.ValueOutput output, CallbackInfo ci) {
+        output.putBoolean("IsArtificial", this.isArtificial);
+        output.store("Shells", com.mojang.serialization.Codec.list(CompoundTag.CODEC), this.shellsById.values().stream().map(x -> x.writeNbt(new CompoundTag())).toList());
+        output.storeNullable("PrimaryShellStorage", GlobalPos.CODEC, this.primaryShellStorage);
+    }
+
+    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
+    private void readCustomDataFromNbt(net.minecraft.world.level.storage.ValueInput input, CallbackInfo ci) {
+        this.readShellData(
+            input.getBooleanOr("IsArtificial", false),
+            input.read("Shells", com.mojang.serialization.Codec.list(CompoundTag.CODEC)).orElse(java.util.List.of()),
+            input.read("PrimaryShellStorage", GlobalPos.CODEC).orElse(null)
+        );
+    }
+    *///?} else {
     @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
     private void writeCustomDataToNbt(CompoundTag nbt, CallbackInfo ci) {
         ListTag shellList = new ListTag();
@@ -445,14 +463,21 @@ abstract class ServerPlayerEntityMixin extends Player implements ServerShell, Ki
 
     @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
     private void readCustomDataFromNbt(CompoundTag nbt, CallbackInfo ci) {
-        this.isArtificial = Nbt.getBoolean(nbt, "IsArtificial");
-        this.shellsById = Nbt.getList(nbt, "Shells", Tag.TAG_COMPOUND)
-            .stream()
-            .map(x -> ShellState.fromNbt((CompoundTag)x))
+        this.readShellData(
+            Nbt.getBoolean(nbt, "IsArtificial"),
+            Nbt.getList(nbt, "Shells", Tag.TAG_COMPOUND).stream().map(x -> (CompoundTag)x).toList(),
+            nbt.contains("PrimaryShellStorage") ? GlobalPos.CODEC.parse(NbtOps.INSTANCE, nbt.get("PrimaryShellStorage")).result().orElse(null) : null
+        );
+    }
+    //?}
+
+    @Unique
+    private void readShellData(boolean isArtificial, java.util.List<CompoundTag> shells, @Nullable GlobalPos primaryShellStorage) {
+        this.isArtificial = isArtificial;
+        this.shellsById = shells.stream()
+            .map(ShellState::fromNbt)
             .collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
-        this.primaryShellStorage = nbt.contains("PrimaryShellStorage")
-            ? GlobalPos.CODEC.parse(NbtOps.INSTANCE, nbt.get("PrimaryShellStorage")).result().orElse(null)
-            : null;
+        this.primaryShellStorage = primaryShellStorage;
 
         Collection<Tuple<ShellStateUpdateType, ShellState>> updates = ((ShellStateManager)this.server).popPendingUpdates(this.uuid);
         for (Tuple<ShellStateUpdateType, ShellState> update : updates) {

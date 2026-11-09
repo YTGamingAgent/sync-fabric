@@ -40,7 +40,9 @@ public class GhostShellsCommand implements Command {
         /*boolean isOp = commandSource.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
         *///?} else
         boolean isOp = commandSource.hasPermission(OP_LEVEL);
-        return isOp || commandSource.getServer().isSingleplayer();
+        // The server can be missing: since 26.2 permission checks are also run on a placeholder source.
+        MinecraftServer server = commandSource.getServer();
+        return isOp || (server != null && server.isSingleplayer());
     }
 
     @Override

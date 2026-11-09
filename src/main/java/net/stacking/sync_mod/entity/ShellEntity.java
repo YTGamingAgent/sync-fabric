@@ -34,6 +34,11 @@ public class ShellEntity extends RemotePlayer {
 
     public ShellEntity(ClientLevel world, ShellState state) {
         super(world, getPlayerEntry(state).getProfile()/*? if <1.19.3 {*//*, null*//*?}*/);
+        //? if >=26.2 {
+        /*// Since 26.2 entities only get an ID once added to a level, and rendering reads it.
+        // Shells are client-only and never added, so give each a stable negative ID (never 0, never a real entity's).
+        this.setId(-(state.getUuid().hashCode() & 0x3FFFFFFF) - 1);
+        *///?}
         this.isActive = false;
         this.pitchProgress = 0;
         this.state = state;

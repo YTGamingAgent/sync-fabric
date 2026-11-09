@@ -40,9 +40,13 @@ public class TreadmillBlockEntity extends BlockEntity implements DoubleBlockEnti
     public static final long ENERGY_PER_TICK = 200;
 
     /**
-     * Ticks it takes for the runner's legs to reach full speed (ticks -> seconds -> minutes).
+     * Running time is counted up to this many ticks (15 minutes); it's kept with the treadmill's data.
      */
     private static final int MAX_RUNNING_TIME = 20 * 60 * 15;
+    /**
+     * Ticks it takes for the runner's legs to go from standing still to a full run (2 seconds).
+     */
+    private static final int LEG_SPEED_UP_TICKS = 40;
     private static final double MAX_SQUARED_DISTANCE = 0.5;
 
     private UUID runnerUUID;
@@ -105,9 +109,9 @@ public class TreadmillBlockEntity extends BlockEntity implements DoubleBlockEnti
 
         if (this.runner instanceof LivingEntity livingEntity) {
             //? if >=1.19.4 {
-            livingEntity.walkAnimation.update((float)this.runningTime / MAX_RUNNING_TIME, 1.0f/*? if >=1.21.2 {*//*, 1.0f*//*?}*/);
+            livingEntity.walkAnimation.update(Math.min(1.0f, (float)this.runningTime / LEG_SPEED_UP_TICKS), 1.0f/*? if >=1.21.2 {*//*, 1.0f*//*?}*/);
             //?} else
-            /*livingEntity.animationSpeed = (float)this.runningTime / MAX_RUNNING_TIME;*/
+            /*livingEntity.animationSpeed = Math.min(1.0f, (float)this.runningTime / LEG_SPEED_UP_TICKS);*/
         }
         this.runningTime = Math.min(++this.runningTime, MAX_RUNNING_TIME);
     }

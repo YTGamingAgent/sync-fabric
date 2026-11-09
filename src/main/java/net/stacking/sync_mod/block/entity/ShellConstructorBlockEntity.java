@@ -21,6 +21,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RedstoneTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.stacking.sync_mod.Sync;
 import org.jetbrains.annotations.Nullable;
@@ -31,10 +32,10 @@ import java.util.Set;
 public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEntity {
     /**
      * Build time in seconds, indexed by the number of running treadmills next to the constructor.
-     * Index 0 is used when the constructor is powered by redstone blocks alone.
+     * Index 0 is used when the constructor is powered by redstone alone.
      */
     private static final int[] BUILD_SECONDS_BY_TREADMILL_COUNT = { 180, 180, 120, 60, 30 };
-    private static final int SECONDS_SAVED_PER_REDSTONE_BLOCK = 5;
+    private static final int SECONDS_SAVED_PER_REDSTONE_SOURCE = 5;
     private static final int MIN_BUILD_SECONDS = 1;
 
     public ShellConstructorBlockEntity(BlockPos pos, BlockState state) {
@@ -45,7 +46,8 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
     public void onServerTick(Level world, BlockPos pos, BlockState state) {
         boolean hasPlayerInside = BlockPosUtil.hasPlayerInside(pos, world);
 
-        if (this.shell != null && this.shell.getProgress() < ShellState.PROGRESS_DONE && !hasPlayerInside) {
+        // Construction keeps going no matter who is standing next to (or touching) the constructor.
+        if (this.shell != null && this.shell.getProgress() < ShellState.PROGRESS_DONE) {
             int buildTicks = getBuildTicks(world, pos);
             if (buildTicks > 0) {
                 this.shell.setProgress(this.shell.getProgress() + 1F / buildTicks);
@@ -64,33 +66,43 @@ public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEnti
      * (4 sides × lower and upper half = 8 spots):
      * <ul>
      *     <li>running treadmills: 1 → 3:00, 2 → 2:00, 3 → 1:00, 4 → 0:30;</li>
-     *     <li>every redstone block takes 5 seconds off (redstone blocks alone start from 3:00).</li>
+     *     <li>every redstone block or lit redstone torch takes 5 seconds off (redstone alone starts from 3:00).</li>
      * </ul>
      *
      * @return Build time in ticks, or {@code 0} if the constructor has no power.
      */
     private static int getBuildTicks(Level world, BlockPos bottomPos) {
         Set<BlockPos> runningTreadmills = new HashSet<>();
-        int redstoneBlocks = 0;
+        int redstoneSources = 0;
 
         for (BlockPos partPos : new BlockPos[] { bottomPos, bottomPos.above() }) {
             for (Direction direction : Direction.Plane.HORIZONTAL) {
                 BlockPos neighborPos = partPos.relative(direction);
-                if (world.getBlockState(neighborPos).is(Blocks.REDSTONE_BLOCK)) {
-                    ++redstoneBlocks;
+                if (isRedstoneSource(world.getBlockState(neighborPos))) {
+                    ++redstoneSources;
                 } else if (world.getBlockEntity(neighborPos) instanceof TreadmillBlockEntity treadmill && treadmill.isRunning()) {
                     runningTreadmills.add(treadmill.getBlockPos());
                 }
             }
         }
 
-        if (runningTreadmills.isEmpty() && redstoneBlocks == 0) {
+        if (runningTreadmills.isEmpty() && redstoneSources == 0) {
             return 0;
         }
 
         int treadmillCount = Math.min(runningTreadmills.size(), BUILD_SECONDS_BY_TREADMILL_COUNT.length - 1);
-        int seconds = BUILD_SECONDS_BY_TREADMILL_COUNT[treadmillCount] - SECONDS_SAVED_PER_REDSTONE_BLOCK * redstoneBlocks;
+        int seconds = BUILD_SECONDS_BY_TREADMILL_COUNT[treadmillCount] - SECONDS_SAVED_PER_REDSTONE_SOURCE * redstoneSources;
         return Math.max(seconds, MIN_BUILD_SECONDS) * 20;
+    }
+
+    /**
+     * Redstone blocks and lit redstone torches (standing or on a wall) count as power.
+     */
+    private static boolean isRedstoneSource(BlockState state) {
+        if (state.is(Blocks.REDSTONE_BLOCK)) {
+            return true;
+        }
+        return state.getBlock() instanceof RedstoneTorchBlock && state.getValue(RedstoneTorchBlock.LIT);
     }
 
     @Override

@@ -24,6 +24,10 @@ public class PersistentCameraEntity extends LocalPlayer {
 
     private PersistentCameraEntity(Minecraft client) {
         super(client, (net.minecraft.client.multiplayer.ClientLevel)WorldUtil.level(Objects.requireNonNull(client.player)), client.player.connection, client.player.getStats(), client.player.getRecipeBook(), /*? if >=1.21.6 {*//*net.minecraft.world.entity.player.Input.EMPTY*//*?} else {*/false/*?}*/, false/*? if >=26.1 {*//*, client.player.chatAbilities()*//*?}*/);
+        //? if >=26.2 {
+        /*// Client-only entity: since 26.2 IDs are only assigned when added to a level (shells use -1 to -2^30).
+        this.setId(Integer.MIN_VALUE + 1);
+        *///?}
         LocalPlayer player = client.player;
         EntityUtil.moveTo(this, player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
         this.setRot(player.getYRot(), player.getXRot());

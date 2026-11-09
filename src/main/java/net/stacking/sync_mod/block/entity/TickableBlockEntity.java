@@ -1,31 +1,31 @@
 package net.stacking.sync_mod.block.entity;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
 public interface TickableBlockEntity {
-    static <T extends BlockEntity> void clientTicker(World world, BlockPos pos, BlockState state, T blockEntity) {
+    static <T extends BlockEntity> void clientTicker(Level world, BlockPos pos, BlockState state, T blockEntity) {
         if (blockEntity instanceof TickableBlockEntity tickable) {
             tickable.onClientTick(world, pos, state);
         }
     }
 
-    static <T extends BlockEntity> void serverTicker(World world, BlockPos pos, BlockState state, T blockEntity) {
+    static <T extends BlockEntity> void serverTicker(Level world, BlockPos pos, BlockState state, T blockEntity) {
         if (blockEntity instanceof TickableBlockEntity tickable) {
             tickable.onServerTick(world, pos, state);
         }
     }
 
-    default void onClientTick(World world, BlockPos pos, BlockState state) {
+    default void onClientTick(Level world, BlockPos pos, BlockState state) {
         this.onTick(world, pos, state);
     }
 
-    default void onServerTick(World world, BlockPos pos, BlockState state) {
+    default void onServerTick(Level world, BlockPos pos, BlockState state) {
         this.onTick(world, pos, state);
     }
 
     @SuppressWarnings("unused")
-    default void onTick(World world, BlockPos pos, BlockState state) { }
+    default void onTick(Level world, BlockPos pos, BlockState state) { }
 }

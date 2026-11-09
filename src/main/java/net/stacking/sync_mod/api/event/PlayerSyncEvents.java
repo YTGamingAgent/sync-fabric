@@ -4,13 +4,13 @@ import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.api.shell.ShellStateContainer;
 import net.fabricmc.fabric.api.event.Event;
 import net.fabricmc.fabric.api.event.EventFactory;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Events about the synchronization of {@linkplain PlayerEntity players} with their shells.
+ * Events about the synchronization of {@linkplain Player players} with their shells.
  *
  * <p>These events can be categorized into two groups:
  * <ol>
@@ -101,14 +101,14 @@ public final class PlayerSyncEvents {
     @FunctionalInterface
     public interface SyncFailureReason {
         SyncFailureReason OTHER_PROBLEM = () -> null;
-        SyncFailureReason INVALID_SHELL = create(Text.translatable("event.sync.request.fail.invalid.shell"));
-        SyncFailureReason INVALID_CURRENT_LOCATION = create(Text.translatable("event.sync.request.fail.invalid.location.current"));
-        SyncFailureReason INVALID_TARGET_LOCATION = create(Text.translatable("event.sync.request.fail.invalid.location.target"));
+        SyncFailureReason INVALID_SHELL = create(Component.translatable("event.sync.request.fail.invalid.shell"));
+        SyncFailureReason INVALID_CURRENT_LOCATION = create(Component.translatable("event.sync.request.fail.invalid.location.current"));
+        SyncFailureReason INVALID_TARGET_LOCATION = create(Component.translatable("event.sync.request.fail.invalid.location.target"));
 
         @Nullable
-        Text toText();
+        Component toText();
 
-        static SyncFailureReason create(@Nullable Text description) {
+        static SyncFailureReason create(@Nullable Component description) {
             return description == null ? OTHER_PROBLEM : () -> description;
         }
     }
@@ -116,13 +116,13 @@ public final class PlayerSyncEvents {
     @FunctionalInterface
     public interface ShellConstructionFailureReason {
         ShellConstructionFailureReason OTHER_PROBLEM = () -> null;
-        ShellConstructionFailureReason OCCUPIED = create(Text.translatable("event.sync.construction.fail.occupied"));
-        ShellConstructionFailureReason NOT_ENOUGH_HEALTH = create(Text.translatable("event.sync.construction.fail.health"));
+        ShellConstructionFailureReason OCCUPIED = create(Component.translatable("event.sync.construction.fail.occupied"));
+        ShellConstructionFailureReason NOT_ENOUGH_HEALTH = create(Component.translatable("event.sync.construction.fail.health"));
 
         @Nullable
-        Text toText();
+        Component toText();
 
-        static ShellConstructionFailureReason create(@Nullable Text description) {
+        static ShellConstructionFailureReason create(@Nullable Component description) {
             return description == null ? OTHER_PROBLEM : () -> description;
         }
     }
@@ -132,9 +132,9 @@ public final class PlayerSyncEvents {
         ShellSelectionFailureReason OTHER_PROBLEM = () -> null;
 
         @Nullable
-        Text toText();
+        Component toText();
 
-        static ShellSelectionFailureReason create(@Nullable Text description) {
+        static ShellSelectionFailureReason create(@Nullable Component description) {
             return description == null ? OTHER_PROBLEM : () -> description;
         }
     }
@@ -150,7 +150,7 @@ public final class PlayerSyncEvents {
          * @return null if the player can sync, or a failure reason if they cannot
          */
         @Nullable
-        SyncFailureReason allowSync(PlayerEntity player, ShellState targetState);
+        SyncFailureReason allowSync(Player player, ShellState targetState);
     }
 
     @FunctionalInterface
@@ -163,7 +163,7 @@ public final class PlayerSyncEvents {
          * @return null if the player is able to create a new shell, or a failure reason if they cannot
          */
         @Nullable
-        ShellConstructionFailureReason allowShellConstruction(PlayerEntity player, ShellStateContainer targetContainer);
+        ShellConstructionFailureReason allowShellConstruction(Player player, ShellStateContainer targetContainer);
     }
 
     @FunctionalInterface
@@ -176,7 +176,7 @@ public final class PlayerSyncEvents {
          * @return null if the player can select a shell to transfer their mind into, or a failure reason if they cannot
          */
         @Nullable
-        ShellSelectionFailureReason allowShellSelection(PlayerEntity player, ShellStateContainer targetContainer);
+        ShellSelectionFailureReason allowShellSelection(Player player, ShellStateContainer targetContainer);
     }
 
 
@@ -188,7 +188,7 @@ public final class PlayerSyncEvents {
          * @param player the syncing player
          * @param targetState the target shell
          */
-        void onStartSyncing(PlayerEntity player, ShellState targetState);
+        void onStartSyncing(Player player, ShellState targetState);
     }
 
     @FunctionalInterface
@@ -200,7 +200,7 @@ public final class PlayerSyncEvents {
          * @param previousPos a position of the player at the start of synchronization with the current shell
          * @param storedState a previous shell of the player, if any; otherwise, null
          */
-        void onStopSyncing(PlayerEntity player, BlockPos previousPos, @Nullable ShellState storedState);
+        void onStopSyncing(Player player, BlockPos previousPos, @Nullable ShellState storedState);
     }
 
 

@@ -1,46 +1,63 @@
 package net.stacking.sync_mod.item;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventories;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.util.collection.DefaultedList;
+import net.stacking.sync_mod.util.nbt.ItemStackNbt;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.NonNullList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
-public class SimpleInventory implements Inventory {
-    public final DefaultedList<ItemStack> main;
-    public final DefaultedList<ItemStack> armor;
-    public final DefaultedList<ItemStack> offHand;
-    private final DefaultedList<ItemStack> combinedInventory;
+public class SimpleInventory implements Container {
+    public final NonNullList<ItemStack> main;
+    public final NonNullList<ItemStack> armor;
+    public final NonNullList<ItemStack> offHand;
+    private final NonNullList<ItemStack> combinedInventory;
 
     public SimpleInventory() {
         this(36, 4, 1);
     }
 
     public SimpleInventory(int mainSize, int armorSize, int offHandSize) {
-        this.main = DefaultedList.ofSize(mainSize, ItemStack.EMPTY);
-        this.armor = DefaultedList.ofSize(armorSize, ItemStack.EMPTY);
-        this.offHand = DefaultedList.ofSize(offHandSize, ItemStack.EMPTY);
-        this.combinedInventory = DefaultedList.ofSize(mainSize + armorSize + offHandSize, ItemStack.EMPTY);
+        this.main = NonNullList.withSize(mainSize, ItemStack.EMPTY);
+        this.armor = NonNullList.withSize(armorSize, ItemStack.EMPTY);
+        this.offHand = NonNullList.withSize(offHandSize, ItemStack.EMPTY);
+        this.combinedInventory = NonNullList.withSize(mainSize + armorSize + offHandSize, ItemStack.EMPTY);
     }
 
-    public void clone(PlayerInventory inventory) {
-        this.copyFrom(inventory.main, this.main);
-        this.copyFrom(inventory.armor, this.armor);
-        this.copyFrom(inventory.offHand, this.offHand);
+    // Player inventory slots: 0-35 main, 36-39 armor (feet to head), 40 offhand.
+    private static final int PLAYER_ARMOR_START = 36;
+    private static final int PLAYER_OFFHAND_START = 40;
+
+    public void clone(Inventory inventory) {
+        for (int i = 0; i < this.main.size(); ++i) {
+            this.main.set(i, inventory.getItem(i).copy());
+        }
+        for (int i = 0; i < this.armor.size(); ++i) {
+            this.armor.set(i, inventory.getItem(PLAYER_ARMOR_START + i).copy());
+        }
+        for (int i = 0; i < this.offHand.size(); ++i) {
+            this.offHand.set(i, inventory.getItem(PLAYER_OFFHAND_START + i).copy());
+        }
         this.updateCombinedInventory();
     }
 
-    public void copyTo(PlayerInventory inventory) {
-        this.copyFrom(this.main, inventory.main);
-        this.copyFrom(this.armor, inventory.armor);
-        this.copyFrom(this.offHand, inventory.offHand);
+    public void copyTo(Inventory inventory) {
+        for (int i = 0; i < this.main.size(); ++i) {
+            inventory.setItem(i, this.main.get(i).copy());
+        }
+        for (int i = 0; i < this.armor.size(); ++i) {
+            inventory.setItem(PLAYER_ARMOR_START + i, this.armor.get(i).copy());
+        }
+        for (int i = 0; i < this.offHand.size(); ++i) {
+            inventory.setItem(PLAYER_OFFHAND_START + i, this.offHand.get(i).copy());
+        }
     }
 
-    private void copyFrom(DefaultedList<ItemStack> from, DefaultedList<ItemStack> to) {
+    private void copyFrom(NonNullList<ItemStack> from, NonNullList<ItemStack> to) {
         int size = Math.min(from.size(), to.size());
         for (int i = 0; i < size; ++i) {
             to.set(i, from.get(i).copy());
@@ -55,7 +72,7 @@ public class SimpleInventory implements Inventory {
     }
 
     @Override
-    public int size() {
+    public int getContainerSize() {
         return this.combinedInventory.size();
     }
 
@@ -65,33 +82,33 @@ public class SimpleInventory implements Inventory {
     }
 
     @Override
-    public ItemStack getStack(int slot) {
+    public ItemStack getItem(int slot) {
         return slot >= 0 && slot < this.combinedInventory.size() ? this.combinedInventory.get(slot) : ItemStack.EMPTY;
     }
 
     @Override
-    public ItemStack removeStack(int slot, int amount) {
-        ItemStack result = Inventories.splitStack(this.combinedInventory, slot, amount);
+    public ItemStack removeItem(int slot, int amount) {
+        ItemStack result = ContainerHelper.removeItem(this.combinedInventory, slot, amount);
         if (!result.isEmpty()) {
-            this.markDirty();
+            this.setChanged();
             this.updateFromCombined(slot);
         }
         return result;
     }
 
     @Override
-    public ItemStack removeStack(int slot) {
-        ItemStack result = Inventories.removeStack(this.combinedInventory, slot);
+    public ItemStack removeItemNoUpdate(int slot) {
+        ItemStack result = ContainerHelper.takeItem(this.combinedInventory, slot);
         this.updateFromCombined(slot);
         return result;
     }
 
     @Override
-    public void setStack(int slot, ItemStack stack) {
+    public void setItem(int slot, ItemStack stack) {
         if (slot >= 0 && slot < this.combinedInventory.size()) {
             this.combinedInventory.set(slot, stack);
-            if (stack.getCount() > this.getMaxCountPerStack()) {
-                stack.setCount(this.getMaxCountPerStack());
+            if (stack.getCount() > this.getMaxStackSize()) {
+                stack.setCount(this.getMaxStackSize());
             }
             this.updateFromCombined(slot);
         }
@@ -111,13 +128,13 @@ public class SimpleInventory implements Inventory {
     }
 
     @Override
-    public void markDirty() { }
+    public void setChanged() { }
 
     @Override
-    public boolean canPlayerUse(PlayerEntity player) { return true; }
+    public boolean stillValid(Player player) { return true; }
 
     @Override
-    public void clear() {
+    public void clearContent() {
         this.main.clear();
         this.armor.clear();
         this.offHand.clear();
@@ -125,13 +142,13 @@ public class SimpleInventory implements Inventory {
     }
 
     // Registry-aware NBT (1.21 API)
-    public void writeNbt(NbtList list, RegistryWrapper.WrapperLookup registryLookup) {
+    public void writeNbt(ListTag list, HolderLookup.Provider registryLookup) {
         this.writeListToNbt(list, this.main, registryLookup);
         this.writeListToNbt(list, this.armor, registryLookup);
         this.writeListToNbt(list, this.offHand, registryLookup);
     }
 
-    public void readNbt(NbtList list, RegistryWrapper.WrapperLookup registryLookup) {
+    public void readNbt(ListTag list, HolderLookup.Provider registryLookup) {
         int index = 0;
         index = this.readListFromNbt(list, this.main, index, registryLookup);
         index = this.readListFromNbt(list, this.armor, index, registryLookup);
@@ -139,16 +156,16 @@ public class SimpleInventory implements Inventory {
         this.updateCombinedInventory();
     }
 
-    private void writeListToNbt(NbtList list, DefaultedList<ItemStack> items, RegistryWrapper.WrapperLookup registryLookup) {
+    private void writeListToNbt(ListTag list, NonNullList<ItemStack> items, HolderLookup.Provider registryLookup) {
         for (ItemStack stack : items) {
-            list.add(stack.encodeAllowEmpty(registryLookup));
+            list.add(ItemStackNbt.save(stack, registryLookup));
         }
     }
 
-    private int readListFromNbt(NbtList list, DefaultedList<ItemStack> items, int startIndex, RegistryWrapper.WrapperLookup registryLookup) {
+    private int readListFromNbt(ListTag list, NonNullList<ItemStack> items, int startIndex, HolderLookup.Provider registryLookup) {
         for (int i = 0; i < items.size() && startIndex < list.size(); i++, startIndex++) {
-            NbtCompound compound = list.getCompound(startIndex);
-            items.set(i, ItemStack.fromNbtOrEmpty(registryLookup, compound));
+            CompoundTag compound = net.stacking.sync_mod.util.nbt.Nbt.getCompound(list, startIndex);
+            items.set(i, ItemStackNbt.load(compound, registryLookup));
         }
         return startIndex;
     }

@@ -1,31 +1,34 @@
 package net.stacking.sync_mod.entity;
 
+import net.stacking.sync_mod.util.WorldUtil;
+
+import net.stacking.sync_mod.util.EntityUtil;
+
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.Vec3d;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.phys.Vec3;
 import java.util.Date;
 import java.util.Objects;
 
 @Environment(EnvType.CLIENT)
-public class PersistentCameraEntity extends ClientPlayerEntity {
+public class PersistentCameraEntity extends LocalPlayer {
     private long lastMovementTime;
     private float initialYaw;
     private float initialPitch;
     private double initialDistance;
     private PersistentCameraEntityGoal goal;
 
-    private PersistentCameraEntity(MinecraftClient client) {
-        super(client, Objects.requireNonNull(client.player).clientWorld, client.player.networkHandler, client.player.getStatHandler(), client.player.getRecipeBook(), false, false);
-        ClientPlayerEntity player = client.player;
-        this.refreshPositionAndAngles(player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch());
-        this.setRotation(player.getYaw(), player.getPitch());
+    private PersistentCameraEntity(Minecraft client) {
+        super(client, (net.minecraft.client.multiplayer.ClientLevel)WorldUtil.level(Objects.requireNonNull(client.player)), client.player.connection, client.player.getStats(), client.player.getRecipeBook(), /*? if >=1.21.6 {*//*net.minecraft.world.entity.player.Input.EMPTY*//*?} else {*/false/*?}*/, false/*? if >=26.1 {*//*, client.player.chatAbilities()*//*?}*/);
+        LocalPlayer player = client.player;
+        EntityUtil.moveTo(this, player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+        this.setRot(player.getYRot(), player.getXRot());
         this.updateLastTickValues();
-        this.noClip = true;
+        this.noPhysics = true;
     }
 
     @Override
@@ -34,7 +37,7 @@ public class PersistentCameraEntity extends ClientPlayerEntity {
     }
 
     @Override
-    public void tickMovement() {
+    public void aiStep() {
         PersistentCameraEntityGoal goal = this.goal;
         long currentTime = new Date().getTime();
         if (goal == null || this.lastMovementTime < 0) {
@@ -46,41 +49,41 @@ public class PersistentCameraEntity extends ClientPlayerEntity {
         }
         this.updateLastTickValues();
 
-        Vec3d currentPos = this.getPos();
-        Vec3d currentVelocity = this.getVelocity();
-        Vec3d newPos = currentPos.add(currentVelocity.multiply(currentTime - this.lastMovementTime));
-        Vec3d currentDiff = goal.pos.subtract(currentPos);
-        Vec3d newDiff = goal.pos.subtract(newPos);
+        Vec3 currentPos = this.position();
+        Vec3 currentVelocity = this.getDeltaMovement();
+        Vec3 newPos = currentPos.add(currentVelocity.scale(currentTime - this.lastMovementTime));
+        Vec3 currentDiff = goal.pos.subtract(currentPos);
+        Vec3 newDiff = goal.pos.subtract(newPos);
 
         if (Math.signum(currentDiff.x) != Math.signum(newDiff.x)) {
-            newPos = new Vec3d(goal.pos.x, newPos.y, newPos.z);
-            currentVelocity = new Vec3d(0, currentVelocity.y, currentVelocity.z);
+            newPos = new Vec3(goal.pos.x, newPos.y, newPos.z);
+            currentVelocity = new Vec3(0, currentVelocity.y, currentVelocity.z);
         }
         if (Math.signum(currentDiff.y) != Math.signum(newDiff.y)) {
-            newPos = new Vec3d(newPos.x, goal.pos.y, newPos.z);
-            currentVelocity = new Vec3d(currentVelocity.x, 0, currentVelocity.z);
+            newPos = new Vec3(newPos.x, goal.pos.y, newPos.z);
+            currentVelocity = new Vec3(currentVelocity.x, 0, currentVelocity.z);
         }
         if (Math.signum(currentDiff.z) != Math.signum(newDiff.z)) {
-            newPos = new Vec3d(newPos.x, newPos.y, goal.pos.z);
-            currentVelocity = new Vec3d(currentVelocity.x, currentVelocity.y, 0);
+            newPos = new Vec3(newPos.x, newPos.y, goal.pos.z);
+            currentVelocity = new Vec3(currentVelocity.x, currentVelocity.y, 0);
         }
 
-        this.setPosition(newPos);
-        this.setVelocity(currentVelocity);
+        this.setPos(newPos);
+        this.setDeltaMovement(currentVelocity);
 
         float factor = 1F - (float)(goal.pos.distanceTo(newPos) / this.initialDistance);
         float newYaw = this.initialYaw + (goal.yaw - this.initialYaw) * factor;
         float newPitch = this.initialPitch + (goal.pitch - this.initialPitch) * factor;
-        this.refreshPositionAndAngles(newPos.x, newPos.y, newPos.z, newYaw, newPitch);
-        this.setRotation(newYaw, newPitch);
-        this.setYaw(newYaw);
-        this.setHeadYaw(newYaw);
-        this.setBodyYaw(newYaw);
-        this.renderYaw = this.renderYaw + (newYaw - this.renderYaw) * 0.5F;
-        this.renderPitch = this.renderPitch + (newPitch - this.renderPitch) * 0.5F;
+        EntityUtil.moveTo(this, newPos.x, newPos.y, newPos.z, newYaw, newPitch);
+        this.setRot(newYaw, newPitch);
+        this.setYRot(newYaw);
+        this.setYHeadRot(newYaw);
+        this.setYBodyRot(newYaw);
+        this.yBob = this.yBob + (newYaw - this.yBob) * 0.5F;
+        this.xBob = this.xBob + (newPitch - this.xBob) * 0.5F;
 
         this.lastMovementTime = currentTime;
-        if (this.getPos().equals(goal.pos)) {
+        if (this.position().equals(goal.pos)) {
             this.updateLastTickValues();
             this.setGoal(null);
             goal.finish(this);
@@ -89,24 +92,24 @@ public class PersistentCameraEntity extends ClientPlayerEntity {
 
     private void updateLastTickValues()
     {
-        this.lastRenderX = this.getX();
-        this.lastRenderY = this.getY();
-        this.lastRenderZ = this.getZ();
+        this.xOld = this.getX();
+        this.yOld = this.getY();
+        this.zOld = this.getZ();
 
-        this.prevX = this.getX();
-        this.prevY = this.getY();
-        this.prevZ = this.getZ();
+        this.xo = this.getX();
+        this.yo = this.getY();
+        this.zo = this.getZ();
 
-        this.lastRenderYaw = this.renderYaw;
-        this.lastRenderPitch = this.renderPitch;
+        this.yBobO = this.yBob;
+        this.xBobO = this.xBob;
 
-        this.prevHeadYaw = this.headYaw;
+        this.yHeadRotO = this.yHeadRot;
     }
 
     public void setGoal(PersistentCameraEntityGoal goal) {
         this.goal = goal;
-        this.initialYaw = this.getYaw();
-        this.initialPitch = this.getPitch();
+        this.initialYaw = this.getYRot();
+        this.initialPitch = this.getXRot();
         this.lastMovementTime = -1;
 
         double dX = 0;
@@ -114,7 +117,7 @@ public class PersistentCameraEntity extends ClientPlayerEntity {
         double dZ = 0;
         double duration = 0;
         if (goal != null) {
-            Vec3d pos = this.getPos();
+            Vec3 pos = this.position();
             dX = goal.pos.x - pos.x;
             dY = goal.pos.y - pos.y;
             dZ = goal.pos.z - pos.z;
@@ -125,16 +128,16 @@ public class PersistentCameraEntity extends ClientPlayerEntity {
         }
 
         this.initialDistance = Math.sqrt(dX * dX + dY * dY + dZ * dZ);
-        this.setVelocity(new Vec3d(dX, dY, dZ).multiply(1.0 / Math.max(1, duration)));
+        this.setDeltaMovement(new Vec3(dX, dY, dZ).scale(1.0 / Math.max(1, duration)));
     }
 
     public PersistentCameraEntityGoal getGoal() {
         return this.goal;
     }
 
-    public static void setup(MinecraftClient client, PersistentCameraEntityGoal goal) {
-        AbstractClientPlayerEntity player = client.player;
-        if (player == null || player.clientWorld == null) {
+    public static void setup(Minecraft client, PersistentCameraEntityGoal goal) {
+        AbstractClientPlayer player = client.player;
+        if (player == null || WorldUtil.level(player) == null) {
             return;
         }
 
@@ -146,19 +149,19 @@ public class PersistentCameraEntity extends ClientPlayerEntity {
         camera.setGoal(goal);
     }
 
-    public static void unset(MinecraftClient client) {
+    public static void unset(Minecraft client) {
         if (client.getCameraEntity() instanceof PersistentCameraEntity camera) {
             camera.setGoal(null);
             client.setCameraEntity(client.player);
         }
     }
 
-    private static void onTick(MinecraftClient client) {
+    private static void onTick(Minecraft client) {
         if (!(client.getCameraEntity() instanceof PersistentCameraEntity camera) || camera.goal == null) {
             return;
         }
 
-        camera.tickMovement();
+        camera.aiStep();
     }
 
     static {

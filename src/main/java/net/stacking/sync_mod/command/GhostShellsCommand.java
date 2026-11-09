@@ -9,25 +9,24 @@ import net.stacking.sync_mod.api.shell.Shell;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.api.shell.ShellStateContainer;
 import net.stacking.sync_mod.util.WorldUtil;
-import net.minecraft.command.CommandSource;
-import net.minecraft.command.argument.BlockPosArgumentType;
-import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.Chunk;
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 
 public class GhostShellsCommand implements Command {
-    private static final SimpleCommandExceptionType INVALID_ACTION_TYPE = new SimpleCommandExceptionType(Text.translatable("command.sync.ghostshells.invalid_action"));
+    private static final SimpleCommandExceptionType INVALID_ACTION_TYPE = new SimpleCommandExceptionType(Component.translatable("command.sync.ghostshells.invalid_action"));
 
     @Override
     public String getName() {
@@ -35,25 +34,29 @@ public class GhostShellsCommand implements Command {
     }
 
     @Override
-    public boolean hasPermissions(ServerCommandSource commandSource) {
+    public boolean hasPermissions(CommandSourceStack commandSource) {
         final int OP_LEVEL = 2;
-        return commandSource.hasPermissionLevel(OP_LEVEL) || commandSource.getServer().isSingleplayer();
+        //? if >=1.21.11 {
+        /*boolean isOp = commandSource.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+        *///?} else
+        boolean isOp = commandSource.hasPermission(OP_LEVEL);
+        return isOp || commandSource.getServer().isSingleplayer();
     }
 
     @Override
-    public void build(ArgumentBuilder<ServerCommandSource, ?> builder) {
-        builder.then(CommandManager.argument("type", StringArgumentType.word())
-            .suggests((a, b) -> CommandSource.suggestMatching(Set.of("sync", "remove", "repair"), b))
-            .then(CommandManager.argument("target", EntityArgumentType.players())
+    public void build(ArgumentBuilder<CommandSourceStack, ?> builder) {
+        builder.then(Commands.argument("type", StringArgumentType.word())
+            .suggests((a, b) -> SharedSuggestionProvider.suggest(Set.of("sync", "remove", "repair"), b))
+            .then(Commands.argument("target", EntityArgument.players())
                 .executes(GhostShellsCommand::execute)
-                .then(CommandManager.argument("pos", BlockPosArgumentType.blockPos())
+                .then(Commands.argument("pos", BlockPosArgument.blockPos())
                     .executes(GhostShellsCommand::execute)
                 )
             )
         );
     }
 
-    private static int execute(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+    private static int execute(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String type = StringArgumentType.getString(context, "type");
         boolean repair;
         boolean canSkip;
@@ -74,25 +77,31 @@ public class GhostShellsCommand implements Command {
             default -> throw INVALID_ACTION_TYPE.create();
         }
 
-        Consumer<Text> logger = x -> context.getSource().sendFeedback(() -> x, false);
-        Collection<ServerPlayerEntity> players = EntityArgumentType.getPlayers(context, "target");
+        //? if >=1.20 {
+        Consumer<Component> logger = x -> context.getSource().sendSuccess(() -> x, false);
+        //?} else
+        /*Consumer<Component> logger = x -> context.getSource().sendSuccess(x, false);*/
+        Collection<ServerPlayer> players = EntityArgument.getPlayers(context, "target");
         BlockPos pos;
         try {
-            pos = BlockPosArgumentType.getBlockPos(context, "pos");
+            //? if >=1.19.4 {
+            pos = BlockPosArgument.getBlockPos(context, "pos");
+            //?} else
+            /*pos = BlockPosArgument.getLoadedBlockPos(context, "pos");*/
         } catch (IllegalArgumentException e) {
             pos = null;
         }
 
         if (pos == null) {
-            for (ServerPlayerEntity player : players) {
+            for (ServerPlayer player : players) {
                 updateShells(player, repair, canSkip, logger);
             }
         } else {
             BlockPos finalPos = pos;
-            for (ServerPlayerEntity player : players) {
+            for (ServerPlayer player : players) {
                 ShellState shellState = ((Shell)player).getAvailableShellStates().filter(x -> x.getPos().equals(finalPos)).findAny().orElse(null);
                 if (shellState == null) {
-                    logger.accept(Text.translatable("command.sync.ghostshells.not_found", player.getName().getString(), pos.toShortString()));
+                    logger.accept(Component.translatable("command.sync.ghostshells.not_found", player.getName().getString(), pos.toShortString()));
                 } else {
                     updateShell(player, shellState, repair, canSkip, logger);
                 }
@@ -101,32 +110,32 @@ public class GhostShellsCommand implements Command {
         return 1;
     }
 
-    private static void updateShells(ServerPlayerEntity player, boolean shouldRepair, boolean skipOnFailure, Consumer<Text> logger) {
+    private static void updateShells(ServerPlayer player, boolean shouldRepair, boolean skipOnFailure, Consumer<Component> logger) {
         for (ShellState shellState : (Iterable<ShellState>)((Shell)player).getAvailableShellStates()::iterator) {
             shellState.setProgress(100);
             updateShell(player, shellState, shouldRepair, skipOnFailure, logger);
         }
     }
 
-    private static void updateShell(ServerPlayerEntity player, ShellState shellState, boolean shouldRepair, boolean skipOnFailure, Consumer<Text> logger) {
-        if (shellExists(player.server, shellState)) {
+    private static void updateShell(ServerPlayer player, ShellState shellState, boolean shouldRepair, boolean skipOnFailure, Consumer<Component> logger) {
+        if (shellExists(WorldUtil.server(player), shellState)) {
             return;
         }
 
         if (shouldRepair) {
-            if (tryRepair(player.server, shellState)) {
-                logger.accept(Text.translatable("command.sync.ghostshells.repaired", player.getName().getString(), shellState.getPos().toShortString()));
+            if (tryRepair(WorldUtil.server(player), shellState)) {
+                logger.accept(Component.translatable("command.sync.ghostshells.repaired", player.getName().getString(), shellState.getPos().toShortString()));
                 return;
             }
 
             if (!skipOnFailure) {
-                logger.accept(Text.translatable("command.sync.ghostshells.failed", player.getName().getString(), shellState.getPos().toShortString()));
+                logger.accept(Component.translatable("command.sync.ghostshells.failed", player.getName().getString(), shellState.getPos().toShortString()));
                 return;
             }
         }
 
         ((Shell)player).remove(shellState);
-        logger.accept(Text.translatable("command.sync.ghostshells.removed", player.getName().getString(), shellState.getPos().toShortString()));
+        logger.accept(Component.translatable("command.sync.ghostshells.removed", player.getName().getString(), shellState.getPos().toShortString()));
     }
 
     private static boolean shellExists(MinecraftServer server, ShellState shellState) {
@@ -147,12 +156,12 @@ public class GhostShellsCommand implements Command {
     }
 
     private static Optional<ShellStateContainer> getShellContainer(MinecraftServer server, ShellState shellState) {
-        ServerWorld world = WorldUtil.findWorld(server.getWorlds(), shellState.getWorld()).orElse(null);
+        ServerLevel world = WorldUtil.findWorld(server.getAllLevels(), shellState.getWorld()).orElse(null);
         if (world == null) {
             return Optional.empty();
         }
 
-        Chunk chunk = world.getChunk(shellState.getPos());
+        ChunkAccess chunk = world.getChunk(shellState.getPos());
         if (chunk == null) {
             return Optional.empty();
         }

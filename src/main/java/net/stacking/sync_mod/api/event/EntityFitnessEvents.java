@@ -2,7 +2,7 @@ package net.stacking.sync_mod.api.event;
 
 import net.fabricmc.fabric.api.event.Event;
 import net.fabricmc.fabric.api.event.EventFactory;
-import net.minecraft.entity.Entity;
+import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 import team.reborn.energy.api.EnergyStorage;
 

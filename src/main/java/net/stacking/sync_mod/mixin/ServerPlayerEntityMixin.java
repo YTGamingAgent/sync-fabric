@@ -1,5 +1,6 @@
 package net.stacking.sync_mod.mixin;
 
+import net.stacking.sync_mod.util.nbt.Nbt;
 import com.mojang.authlib.GameProfile;
 import com.mojang.datafixers.util.Either;
 import net.stacking.sync_mod.api.event.PlayerSyncEvents;
@@ -11,33 +12,32 @@ import net.stacking.sync_mod.block.entity.ShellStorageBlockEntity;
 import net.stacking.sync_mod.entity.KillableEntity;
 import net.stacking.sync_mod.util.BlockPosUtil;
 import net.stacking.sync_mod.util.WorldUtil;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.network.packet.s2c.play.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.scoreboard.AbstractTeam;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayNetworkHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.HoverEvent;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Pair;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.GameMode;
-import net.minecraft.world.GameRules;
-import net.minecraft.world.World;
-import net.minecraft.world.biome.source.BiomeAccess;
-import net.minecraft.world.chunk.Chunk;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.util.Mth;
+import net.stacking.sync_mod.util.Tuple;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.scores.Team;
+import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -52,23 +52,23 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@Mixin(ServerPlayerEntity.class)
-abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShell, KillableEntity {
+@Mixin(ServerPlayer.class)
+abstract class ServerPlayerEntityMixin extends Player implements ServerShell, KillableEntity {
     @Shadow
-    private int syncedExperience;
+    private int lastSentExp;
 
     @Shadow
-    private float syncedHealth;
+    private float lastSentHealth;
 
     @Shadow
-    private int syncedFoodLevel;
+    private int lastSentFood;
 
     @Final
     @Shadow
     public MinecraftServer server;
 
     @Shadow
-    public ServerPlayNetworkHandler networkHandler;
+    public ServerGamePacketListenerImpl connection;
 
     @Unique
     private boolean isArtificial = false;
@@ -83,17 +83,27 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
     private ConcurrentMap<UUID, ShellState> shellsById = new ConcurrentHashMap<>();
 
     @Unique
-    private Map<UUID, Pair<ShellStateUpdateType, ShellState>> shellStateChanges = new ConcurrentHashMap<>();
+    private Map<UUID, Tuple<ShellStateUpdateType, ShellState>> shellStateChanges = new ConcurrentHashMap<>();
+
+    @Unique
+    @Nullable
+    private GlobalPos primaryShellStorage;
 
 
-    private ServerPlayerEntityMixin(World world, BlockPos pos, float yaw, GameProfile profile) {
+    private ServerPlayerEntityMixin(Level world, BlockPos pos, float yaw, GameProfile profile) {
+        //? if >=1.21.6 {
+        /*super(world, profile);
+        *///?} else if >=1.19.3 {
         super(world, pos, yaw, profile);
+        //?} else {
+        /*super(world, pos, yaw, profile, null);
+        *///?}
     }
 
 
     @Override
     public UUID getShellOwnerUuid() {
-        return this.getGameProfile().getId();
+        return this.getGameProfile()./*? if >=1.21.9 {*//*id()*//*?} else {*/getId()/*?}*/;
     }
 
     @Override
@@ -107,6 +117,146 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
             this.isArtificial = isArtificial;
             this.shellDirty = true;
         }
+    }
+
+    @Override
+    @Nullable
+    public GlobalPos getPrimaryShellStorage() {
+        return this.primaryShellStorage;
+    }
+
+    @Override
+    public void setPrimaryShellStorage(@Nullable GlobalPos pos) {
+        this.primaryShellStorage = pos;
+    }
+
+    @Override
+    public Either<ShellState, PlayerSyncEvents.SyncFailureReason> sync(ShellState state) {
+        ServerPlayer player = (ServerPlayer)(Object)this;
+        BlockPos currentPos = this.blockPosition();
+        Level currentWorld = WorldUtil.level(player);
+
+        if (!this.canBeApplied(state) || state.getProgress() < ShellState.PROGRESS_DONE) {
+            return Either.right(PlayerSyncEvents.SyncFailureReason.INVALID_SHELL);
+        }
+
+        boolean isDead = this.isDeadOrDying();
+        ShellStateContainer currentShellContainer = isDead ? null : ShellStateContainer.find(currentWorld, currentPos);
+        if (!isDead && (currentShellContainer == null || currentShellContainer.getShellState() != null)) {
+            return Either.right(PlayerSyncEvents.SyncFailureReason.INVALID_CURRENT_LOCATION);
+        }
+
+        PlayerSyncEvents.ShellSelectionFailureReason selectionFailureReason = PlayerSyncEvents.ALLOW_SHELL_SELECTION.invoker().allowShellSelection(player, currentShellContainer);
+        if (selectionFailureReason != null) {
+            return Either.right(selectionFailureReason::toText);
+        }
+
+        ResourceLocation targetWorldId = state.getWorld();
+        ServerLevel targetWorld = WorldUtil.findWorld(this.server.getAllLevels(), targetWorldId).orElse(null);
+        if (targetWorld == null) {
+            return Either.right(PlayerSyncEvents.SyncFailureReason.INVALID_TARGET_LOCATION);
+        }
+
+        BlockPos targetPos = state.getPos();
+        ChunkAccess targetChunk = targetWorld.getChunk(targetPos);
+        ShellStateContainer targetShellContainer = targetChunk == null ? null : ShellStateContainer.find(targetWorld, state);
+        if (targetShellContainer == null) {
+            return Either.right(PlayerSyncEvents.SyncFailureReason.INVALID_TARGET_LOCATION);
+        }
+
+        state = targetShellContainer.getShellState();
+        PlayerSyncEvents.SyncFailureReason finalFailureReason = this.canBeApplied(state) ? PlayerSyncEvents.ALLOW_SYNCING.invoker().allowSync(this, state) : PlayerSyncEvents.SyncFailureReason.INVALID_SHELL;
+        if (finalFailureReason != null) {
+            return Either.right(finalFailureReason);
+        }
+
+        PlayerSyncEvents.START_SYNCING.invoker().onStartSyncing(this, state);
+
+        ShellState storedState = null;
+        if (currentShellContainer != null) {
+            // The body we're leaving stays in the storage we're standing in. The exception is our
+            // original (non-artificial) body: if we have a usable primary storage, it gets parked there.
+            ShellStateContainer bodyContainer = currentShellContainer;
+            BlockPos bodyPos = currentPos;
+            Level bodyWorld = currentWorld;
+
+            ShellStorageBlockEntity primaryStorage = this.isArtificial ? null : ShellStorageBlockEntity.findPrimaryStorage(player);
+            if (primaryStorage != null && primaryStorage != targetShellContainer) {
+                bodyContainer = primaryStorage;
+                bodyPos = primaryStorage.getBlockPos();
+                bodyWorld = Objects.requireNonNull(primaryStorage.getLevel());
+            }
+
+            storedState = ShellState.of(player, bodyPos, bodyContainer.getColor());
+            storedState.setWorld(WorldUtil.getId(bodyWorld));
+            bodyContainer.setShellState(storedState);
+            if (bodyContainer.isRemotelyAccessible()) {
+                this.add(storedState);
+            }
+        }
+
+        targetShellContainer.setShellState(null);
+        this.remove(state);
+        this.apply(state);
+
+        PlayerSyncEvents.STOP_SYNCING.invoker().onStopSyncing(player, currentPos, storedState);
+        return Either.left(storedState);
+    }
+
+    @Override
+    public void apply(ShellState state) {
+        Objects.requireNonNull(state);
+
+        ServerPlayer serverPlayer = (ServerPlayer)(Object)this;
+        ServerLevel targetWorld = WorldUtil.findWorld(this.server.getAllLevels(), state.getWorld()).orElse(null);
+        if (targetWorld == null) {
+            return;
+        }
+
+        this.stopRiding();
+        this.removeEntitiesOnShoulder();
+        this.clearFire();
+        this.setTicksFrozen(0);
+        this.setSharedFlagOnFire(false);
+        this.removeAllEffects();
+
+        new PlayerIsAlivePacket(serverPlayer).send(this.server.getPlayerList().getPlayers());
+        this.teleportToShell(targetWorld, state.getPos());
+        this.isArtificial = state.isArtificial();
+
+        Inventory inventory = this.getInventory();
+        //? if >=1.21.5 {
+        /*int selectedSlot = inventory.getSelectedSlot();
+        *///?} else
+        int selectedSlot = inventory.selected;
+        state.getInventory().copyTo(inventory);
+        //? if >=1.21.5 {
+        /*inventory.setSelectedSlot(selectedSlot);
+        *///?} else
+        inventory.selected = selectedSlot;
+
+        state.getComponent().applyToPlayer(serverPlayer, this.server.registryAccess());
+
+        serverPlayer.setGameMode(state.getGameMode());
+        this.setHealth(state.getHealth());
+        this.experienceLevel = state.getExperienceLevel();
+        this.experienceProgress = state.getExperienceProgress();
+        this.totalExperience = state.getTotalExperience();
+        this.getFoodData().setFoodLevel(state.getFoodLevel());
+        this.getFoodData().setSaturation(state.getSaturationLevel());
+        //? if >=1.21.2 {
+        /*this.getFoodData().exhaustionLevel = state.getExhaustion();
+        *///?} else
+        this.getFoodData().setExhaustion(state.getExhaustion());
+
+        this.undead = false;
+        this.dead = false;
+        this.deathTime = 0;
+        this.fallDistance = 0;
+        this.lastSentExp = -1;
+        this.lastSentHealth = -1;
+        this.lastSentFood = -1;
+        this.shellDirty = true;
     }
 
     @Override
@@ -132,7 +282,7 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         }
 
         this.shellsById.put(state.getUuid(), state);
-        this.shellStateChanges.put(state.getUuid(), new Pair<>(ShellStateUpdateType.ADD, state));
+        this.shellStateChanges.put(state.getUuid(), new Tuple<>(ShellStateUpdateType.ADD, state));
     }
 
     @Override
@@ -142,7 +292,7 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         }
 
         if (this.shellsById.remove(state.getUuid()) != null) {
-            this.shellStateChanges.put(state.getUuid(), new Pair<>(ShellStateUpdateType.REMOVE, state));
+            this.shellStateChanges.put(state.getUuid(), new Tuple<>(ShellStateUpdateType.REMOVE, state));
         }
     }
 
@@ -158,53 +308,53 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
         } else {
             updated = this.shellsById.computeIfPresent(state.getUuid(), (a, b) -> state) != null;
         }
-        this.shellStateChanges.put(state.getUuid(), new Pair<>(updated ? ShellStateUpdateType.UPDATE : ShellStateUpdateType.ADD, state));
+        this.shellStateChanges.put(state.getUuid(), new Tuple<>(updated ? ShellStateUpdateType.UPDATE : ShellStateUpdateType.ADD, state));
     }
 
-    @Inject(method = "playerTick", at = @At("HEAD"))
+    @Inject(method = "doTick", at = @At("HEAD"))
     private void playerTick(CallbackInfo ci) {
-        ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
+        ServerPlayer player = (ServerPlayer)(Object)this;
 
         if (this.shellDirty) {
             this.shellDirty = false;
             this.shellStateChanges.clear();
-            new ShellUpdatePacket(WorldUtil.getId(this.getWorld()), this.isArtificial, this.shellsById.values()).send(player);
+            new ShellUpdatePacket(WorldUtil.getId(WorldUtil.level(this)), this.isArtificial, this.shellsById.values()).send(player);
         }
 
-        for (Pair<ShellStateUpdateType, ShellState> upd : this.shellStateChanges.values()) {
-            new ShellStateUpdatePacket(upd.getLeft(), upd.getRight()).send(player);
+        for (Tuple<ShellStateUpdateType, ShellState> upd : this.shellStateChanges.values()) {
+            new ShellStateUpdatePacket(upd.getA(), upd.getB()).send(player);
         }
         this.shellStateChanges.clear();
     }
 
-    @Inject(method = "onDeath", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "die", at = @At("HEAD"), cancellable = true)
     private void onDeath(DamageSource source, CallbackInfo ci) {
         if (!this.isArtificial) {
             return;
         }
 
-        ShellState respawnShell = this.shellsById.values().stream()
-                .filter(x -> this.canBeApplied(x) && x.getProgress() >= ShellState.PROGRESS_DONE)
-                .findAny()
-                .orElse(null);
-
+        ShellState respawnShell = this.shellsById.values().stream().filter(x -> this.canBeApplied(x) && x.getProgress() >= ShellState.PROGRESS_DONE).findAny().orElse(null);
         if (respawnShell == null) {
             return;
         }
 
-        if (this.getWorld().getGameRules().getBoolean(GameRules.SHOW_DEATH_MESSAGES)) {
+        if (WorldUtil.gameRules(this).getBoolean(GameRules.RULE_SHOWDEATHMESSAGES)) {
             this.sendDeathMessageInChat();
         } else {
             this.sendEmptyDeathMessageInChat();
         }
 
-        if (this.getWorld().getGameRules().getBoolean(GameRules.FORGIVE_DEAD_PLAYERS)) {
-            this.forgiveMobAnger();
+        this.removeEntitiesOnShoulder();
+        if (WorldUtil.gameRules(this).getBoolean(GameRules.RULE_FORGIVE_DEAD_PLAYERS)) {
+            this.tellNeutralMobsThatIDied();
         }
 
         if (!this.isSpectator()) {
-            ServerWorld serverWorld = (ServerWorld) this.getWorld();
-            this.drop(serverWorld, source);
+            //? if >=1.21 {
+            this.dropAllDeathLoot((ServerLevel)WorldUtil.level(this), source);
+            //?} else {
+            /*this.dropAllDeathLoot(source);
+            *///?}
         }
 
         this.undead = true;
@@ -213,20 +363,21 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
 
     @Override
     public boolean updateKillableEntityPostDeath() {
-        this.deathTime = MathHelper.clamp(++this.deathTime, 0, 20);
-
-        if (this.isArtificial && this.shellsById.values().stream()
-                .anyMatch(x -> this.canBeApplied(x) && x.getProgress() >= ShellState.PROGRESS_DONE)) {
+        this.deathTime = Mth.clamp(++this.deathTime, 0, 20);
+        if (this.isArtificial && this.shellsById.values().stream().anyMatch(x -> this.canBeApplied(x) && x.getProgress() >= ShellState.PROGRESS_DONE)) {
             return true;
         }
 
         if (this.undead) {
-            this.onDeath(getWorld().getDamageSources().magic());
+            //? if >=1.19.4 {
+            this.die(WorldUtil.level(this).damageSources().magic());
+            //?} else
+            /*this.die(net.minecraft.world.damagesource.DamageSource.MAGIC);*/
             this.undead = false;
         }
 
         if (this.deathTime == 20) {
-            this.getWorld().sendEntityStatus(this, (byte) 60);
+            WorldUtil.level(this).broadcastEntityEvent(this, (byte)60);
             this.remove(RemovalReason.KILLED);
         }
         return true;
@@ -234,217 +385,107 @@ abstract class ServerPlayerEntityMixin extends PlayerEntity implements ServerShe
 
     @Unique
     private void sendDeathMessageInChat() {
-        Text text = this.getDamageTracker().getDeathMessage();
-        this.networkHandler.sendPacket(new DeathMessageS2CPacket(this.getId(), text));
-
-        AbstractTeam abstractTeam = this.getScoreboardTeam();
-        if (abstractTeam != null && abstractTeam.getDeathMessageVisibilityRule() != AbstractTeam.VisibilityRule.ALWAYS) {
-            if (abstractTeam.getDeathMessageVisibilityRule() == AbstractTeam.VisibilityRule.HIDE_FOR_OTHER_TEAMS) {
-                this.server.getPlayerManager().sendToTeam(this, text);
-            } else if (abstractTeam.getDeathMessageVisibilityRule() == AbstractTeam.VisibilityRule.HIDE_FOR_OWN_TEAM) {
-                this.server.getPlayerManager().sendToOtherTeams(this, text);
+        Component text = this.getCombatTracker().getDeathMessage();
+        this.connection.send(new ClientboundPlayerCombatKillPacket(/*? if >=1.20 {*/this.getId()/*?} else {*//*this.getCombatTracker()*//*?}*/, text), PacketSendListener.exceptionallySend(() -> {
+            String truncatedString = text.getString(256);
+            Component messageWasTooLong = Component.translatable("death.attack.message_too_long", Component.literal(truncatedString).withStyle(ChatFormatting.YELLOW));
+            Component magic = Component.translatable("death.attack.even_more_magic", this.getDisplayName()).withStyle((style) -> style.withHoverEvent(/*? if >=1.21.5 {*//*new HoverEvent.ShowText(messageWasTooLong)*//*?} else {*/new HoverEvent(HoverEvent.Action.SHOW_TEXT, messageWasTooLong)/*?}*/));
+            return new ClientboundPlayerCombatKillPacket(/*? if >=1.20 {*/this.getId()/*?} else {*//*this.getCombatTracker()*//*?}*/, magic);
+        }));
+        Team abstractTeam = this.getTeam();
+        if (abstractTeam != null && abstractTeam.getDeathMessageVisibility() != Team.Visibility.ALWAYS) {
+            if (abstractTeam.getDeathMessageVisibility() == Team.Visibility.HIDE_FOR_OTHER_TEAMS) {
+                this.server.getPlayerList().broadcastSystemToTeam(this, text);
+            } else if (abstractTeam.getDeathMessageVisibility() == Team.Visibility.HIDE_FOR_OWN_TEAM) {
+                this.server.getPlayerList().broadcastSystemToAllExceptTeam(this, text);
             }
         } else {
-            this.server.getPlayerManager().broadcast(text, false);
+            this.server.getPlayerList().broadcastSystemMessage(text, false);
         }
     }
 
     @Unique
     private void sendEmptyDeathMessageInChat() {
-        this.networkHandler.sendPacket(new DeathMessageS2CPacket(this.getId(), Text.empty()));
+        this.connection.send(new ClientboundPlayerCombatKillPacket(/*? if >=1.20 {*/this.getId()/*?} else {*//*this.getCombatTracker()*//*?}*/, Component.empty()));
     }
 
-    @Override
-    public Either<ShellState, PlayerSyncEvents.SyncFailureReason> sync(ShellState targetState) {
-        if (!this.canBeApplied(targetState)) {
-            return Either.right(PlayerSyncEvents.SyncFailureReason.INVALID_SHELL);
-        }
-
-        if (targetState.getProgress() < ShellState.PROGRESS_DONE) {
-            return Either.right(PlayerSyncEvents.SyncFailureReason.INVALID_SHELL);
-        }
-
-        PlayerSyncEvents.SyncFailureReason failureReason = PlayerSyncEvents.ALLOW_SYNCING.invoker().allowSync(this, targetState);
-        if (failureReason != null) {
-            return Either.right(failureReason);
-        }
-
-        ServerPlayerEntity serverPlayer = (ServerPlayerEntity) (Object) this;
-        ServerWorld targetWorld = this.server.getWorld(targetState.getWorld() != null
-                ? this.server.getWorldRegistryKeys().stream()
-                  .filter(key -> key.getValue().equals(targetState.getWorld()))
-                  .findFirst()
-                  .orElse(this.getServerWorld().getRegistryKey())
-                : this.getServerWorld().getRegistryKey());
-
-        if (targetWorld == null) {
-            return Either.right(PlayerSyncEvents.SyncFailureReason.OTHER_PROBLEM);
-        }
-
-        ShellState storedState = ShellState.copy(serverPlayer, targetState.getPos());
-        // PROGRESS_DONE so the body is visible and selectable in the storage.
-        // (PROGRESS_START = 0 would render as nothing — the shell model is empty at 0%.)
-        storedState.setProgress(ShellState.PROGRESS_DONE);
-
-        this.stopRiding();
-        this.extinguish();
-        this.setFrozenTicks(0);
-        this.setOnFire(false);
-        this.clearStatusEffects();
-
-        new PlayerIsAlivePacket(serverPlayer).send(this.server.getPlayerManager().getPlayerList());
-        this.setWorld(targetWorld);
-        this.setPos(targetState.getPos().getX() + 0.5, targetState.getPos().getY(), targetState.getPos().getZ() + 0.5);
-
-        // Set yaw so the player faces OUT through the machine's doors (works for
-        // both Shell Storage and Shell Constructor since both have a FACING property).
-        BlockEntity targetEntity = targetWorld.getBlockEntity(targetState.getPos());
-        if (targetEntity instanceof net.stacking.sync_mod.block.entity.AbstractShellContainerBlockEntity container) {
-            Direction facing = container.getCachedState().get(net.minecraft.state.property.Properties.FACING);
-            this.setYaw(facing.asRotation());
-            this.setPitch(0);
-        }
-
-        this.isArtificial = targetState.isArtificial();
-
-        if (!targetState.isArtificial()) {
-            this.setInvisible(true);
-            this.setNoGravity(true);
-        }
-        storedState.setHealth(0.01f);
-
-        PlayerInventory inventory = this.getInventory();
-        int selectedSlot = inventory.selectedSlot;
-        targetState.getInventory().copyTo(inventory);
-        inventory.selectedSlot = selectedSlot;
-
-        ShellStateComponent targetComponent = targetState.getComponent();
-        ShellStateComponent playerComponent = ShellStateComponent.of(serverPlayer);
-
-        serverPlayer.changeGameMode(targetState.getGameMode());
-        this.setHealth(targetState.getHealth());
-        this.experienceLevel = targetState.getExperienceLevel();
-        this.experienceProgress = targetState.getExperienceProgress();
-        this.totalExperience = targetState.getTotalExperience();
-        this.getHungerManager().setFoodLevel(targetState.getFoodLevel());
-        this.getHungerManager().setSaturationLevel(targetState.getSaturationLevel());
-        this.getHungerManager().setExhaustion(targetState.getExhaustion());
-
-        this.undead = false;
-        this.dead = false;
-        this.deathTime = 0;
-        this.fallDistance = 0;
-        this.syncedExperience = -1;
-        this.syncedHealth = -1;
-        this.syncedFoodLevel = -1;
-        this.shellDirty = true;
-
-        ServerWorld currentWorld = this.getServerWorld();
-        ShellStorageBlockEntity primaryStorage = null;
-
-        // Search every block in a 32-block horizontal / 5-block vertical radius.
-        // The old code stepped by 16 blocks and silently missed almost every position.
-        BlockPos origin = targetState.getPos();
-        outer:
-        for (int dx = -32; dx <= 32; dx++) {
-            for (int dz = -32; dz <= 32; dz++) {
-                for (int dy = -5; dy <= 5; dy++) {
-                    BlockEntity be = currentWorld.getBlockEntity(origin.add(dx, dy, dz));
-                    if (be instanceof ShellStorageBlockEntity storage && storage.isPrimaryStorage()) {
-                        primaryStorage = storage;
-                        break outer;
-                    }
-                }
-            }
-        }
-
-        if (primaryStorage != null) {
-            // Use the storage's own position so the body appears in the storage
-            // (not at the constructor's position, which caused ghost-shell confusion).
-            storedState.setPos(primaryStorage.getPos());
-            primaryStorage.setShellState(storedState);
-            primaryStorage.markDirty();
-            primaryStorage.setLocked(true);  // Lock storage until player swaps back
-            this.add(storedState);
-        }
-
-        ShellStateContainer constructorContainer = ShellStateContainer.find(currentWorld, targetState);
-        if (constructorContainer != null) {
-            constructorContainer.setShellState(null);
-            if (constructorContainer instanceof ShellStorageBlockEntity storage) {
-                storage.markDirty();  // Persist the cleared state
-            }
-            this.remove(targetState);
-        } else {
-            // Fallback: remove from shells list directly
-            this.remove(targetState);
-        }
-        return Either.left(storedState);
+    /**
+     * Moves the player into the shell container at {@code pos}, facing out through its doors.
+     * Vanilla's teleport handles both same-world and cross-dimension moves.
+     */
+    @Unique
+    private void teleportToShell(ServerLevel targetWorld, BlockPos pos) {
+        ServerPlayer serverPlayer = (ServerPlayer)(Object)this;
+        float yaw = BlockPosUtil.getHorizontalFacing(pos, targetWorld).map(d -> d.getOpposite().toYRot()).orElse(0F);
+        //? if >=1.21.2 {
+        /*serverPlayer.teleportTo(targetWorld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, java.util.Set.of(), yaw, 0, true);
+        *///?} else
+        serverPlayer.teleportTo(targetWorld, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, yaw, 0);
     }
 
-    @Inject(method = "writeCustomDataToNbt", at = @At("TAIL"))
-    private void writeCustomDataToNbt(NbtCompound nbt, CallbackInfo ci) {
-        NbtList shellList = new NbtList();
-        this.shellsById.values().stream()
-                .map(x -> x.writeNbt(new NbtCompound()))
-                .forEach(shellList::add);
+    @Shadow
+    protected abstract void tellNeutralMobsThatIDied();
+
+
+    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
+    private void writeCustomDataToNbt(CompoundTag nbt, CallbackInfo ci) {
+        ListTag shellList = new ListTag();
+        this.shellsById
+            .values()
+            .stream()
+            .map(x -> x.writeNbt(new CompoundTag()))
+            .forEach(shellList::add);
 
         nbt.putBoolean("IsArtificial", this.isArtificial);
         nbt.put("Shells", shellList);
+        if (this.primaryShellStorage != null) {
+            GlobalPos.CODEC.encodeStart(NbtOps.INSTANCE, this.primaryShellStorage).result().ifPresent(x -> nbt.put("PrimaryShellStorage", x));
+        }
     }
 
-    @Inject(method = "readCustomDataFromNbt", at = @At("TAIL"))
-    private void readCustomDataFromNbt(NbtCompound nbt, CallbackInfo ci) {
-        this.isArtificial = nbt.getBoolean("IsArtificial");
-        this.shellsById = nbt.getList("Shells", NbtElement.COMPOUND_TYPE)
-                .stream()
-                .map(x -> ShellState.fromNbt((NbtCompound) x))
-                .collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
+    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
+    private void readCustomDataFromNbt(CompoundTag nbt, CallbackInfo ci) {
+        this.isArtificial = Nbt.getBoolean(nbt, "IsArtificial");
+        this.shellsById = Nbt.getList(nbt, "Shells", Tag.TAG_COMPOUND)
+            .stream()
+            .map(x -> ShellState.fromNbt((CompoundTag)x))
+            .collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
+        this.primaryShellStorage = nbt.contains("PrimaryShellStorage")
+            ? GlobalPos.CODEC.parse(NbtOps.INSTANCE, nbt.get("PrimaryShellStorage")).result().orElse(null)
+            : null;
 
-        Collection<Pair<ShellStateUpdateType, ShellState>> updates = ((ShellStateManager) this.server).popPendingUpdates(this.uuid);
-        for (Pair<ShellStateUpdateType, ShellState> update : updates) {
-            ShellState state = update.getRight();
-            switch (update.getLeft()) {
+        Collection<Tuple<ShellStateUpdateType, ShellState>> updates = ((ShellStateManager)this.server).popPendingUpdates(this.uuid);
+        for (Tuple<ShellStateUpdateType, ShellState> update : updates) {
+            ShellState state = update.getB();
+            switch (update.getA()) {
                 case ADD, UPDATE -> {
-                    if (this.canBeApplied(state)) {
+                    if (this.uuid.equals(state.getOwnerUuid())) {
                         this.shellsById.put(state.getUuid(), state);
                     }
                 }
                 case REMOVE -> this.shellsById.remove(state.getUuid());
             }
         }
+
+        this.shellStateChanges = new ConcurrentHashMap<>();
+        this.shellDirty = true;
     }
 
-    @Inject(method = "copyFrom", at = @At("TAIL"))
-    private void copyFrom(ServerPlayerEntity oldPlayer, boolean alive, CallbackInfo ci) {
-        ServerShell oldShell = (ServerShell) oldPlayer;
-        this.shellsById = oldShell.getAvailableShellStates().collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
-        this.isArtificial = oldShell.isArtificial();
+    @Inject(method = "restoreFrom", at = @At("HEAD"))
+    private void copyFrom(ServerPlayer oldPlayer, boolean alive, CallbackInfo ci) {
+        ServerShell shell = (ServerShell)oldPlayer;
+        this.isArtificial = alive && shell.isArtificial();
+        this.shellsById = shell.getAvailableShellStates().collect(Collectors.toConcurrentMap(ShellState::getUuid, x -> x));
+        this.primaryShellStorage = shell.getPrimaryShellStorage();
+        this.shellStateChanges = new ConcurrentHashMap<>();
+        this.shellDirty = true;
     }
 
-    @Shadow
-    protected abstract void forgiveMobAnger();
-
-    @Shadow
-    protected abstract void worldChanged(ServerWorld origin);
-
-    @Shadow
-    public abstract ServerWorld getServerWorld();
-
-    @Shadow
-    public abstract boolean isInTeleportationState();
-
-    @Shadow
-    public abstract void onTeleportationDone();
-
-    @Unique
-    private void putPendingUpdate(ShellState state, ShellStateUpdateType type) {
-        this.shellStateChanges.put(state.getUuid(), new Pair<>(type, state));
-    }
-
-    @Unique
-    private Shell getShellById(UUID id) {
-        return (Shell)this.shellsById.get(id);
+    @Inject(method = /*? if >=1.20 {*/"setServerLevel"/*?} else {*//*"setLevel"*//*?}*/, at = @At("HEAD"))
+    private void setWorld(ServerLevel world, CallbackInfo ci) {
+        if (world != WorldUtil.level(this)) {
+            this.shellDirty = true;
+        }
     }
 
     @Override

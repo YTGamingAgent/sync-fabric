@@ -2,7 +2,7 @@
   "required": true,
   "minVersion": "0.8",
   "package": "net.stacking.sync_mod.mixin",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "${java}",
   "mixins": [
     "MinecraftServerMixin",
     "LivingEntityMixin",

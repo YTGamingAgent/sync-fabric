@@ -1,47 +1,50 @@
 package net.stacking.sync_mod.entity;
 
+import net.stacking.sync_mod.util.EntityUtil;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.mojang.authlib.GameProfile;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.OtherClientPlayerEntity;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.player.PlayerModelPart;
-import net.minecraft.util.Identifier;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.player.RemotePlayer;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.player.PlayerModelPart;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Environment(EnvType.CLIENT)
-public class ShellEntity extends OtherClientPlayerEntity {
-    private static final Cache<UUID, PlayerListEntry> PLAYER_ENTRY_CACHE;
+public class ShellEntity extends RemotePlayer {
+    private static final Cache<UUID, PlayerInfo> PLAYER_ENTRY_CACHE;
 
     public boolean isActive;
     public float pitchProgress;
     private final ShellState state;
     private Runnable onInitialized;
-    private final PlayerListEntry playerEntry;
+    private final PlayerInfo playerEntry;
 
     public ShellEntity(ShellState state) {
-        this(MinecraftClient.getInstance().world, state);
+        this(Minecraft.getInstance().level, state);
     }
 
-    public ShellEntity(ClientWorld world, ShellState state) {
-        super(world, getPlayerEntry(state).getProfile());
+    public ShellEntity(ClientLevel world, ShellState state) {
+        super(world, getPlayerEntry(state).getProfile()/*? if <1.19.3 {*//*, null*//*?}*/);
         this.isActive = false;
         this.pitchProgress = 0;
         this.state = state;
         state.getInventory().copyTo(this.getInventory());
         this.playerEntry = getPlayerEntry(state);
-        this.refreshPositionAndAngles(state.getPos(), 0, 0);
-        this.prevCapeX = this.capeX = getX() + 0.5;
-        this.prevCapeY = this.capeY = getY();
-        this.prevCapeZ = this.capeZ = getZ() + 0.5;
+        EntityUtil.moveTo(this, state.getPos().getX() + 0.5, state.getPos().getY(), state.getPos().getZ() + 0.5, 0, 0);
+        //? if <1.21.9 {
+        this.xCloakO = this.xCloak = getX() + 0.5;
+        this.yCloakO = this.yCloak = getY();
+        this.zCloakO = this.zCloak = getZ() + 0.5;
+        //?}
 
         if (this.onInitialized != null) {
             this.onInitialized.run();
@@ -62,17 +65,29 @@ public class ShellEntity extends OtherClientPlayerEntity {
     }
 
     public String getModel() {
-        // In 1.21, getSkinTextures().model() returns a Model object
-        // Model.getName() returns "default" or "slim"
-        return this.playerEntry.getSkinTextures().model().getName();
+        // "default" or "slim"
+        //? if >=1.21.9 {
+        /*return this.playerEntry.getSkin().model() == net.minecraft.world.entity.player.PlayerModelType.SLIM ? "slim" : "default";
+        *///?} else if >=1.20.2 {
+        return this.playerEntry.getSkin().model().id();
+        //?} else
+        /*return this.playerEntry.getModelName();*/
     }
 
-    public Identifier getSkinTexture() {
-        return this.playerEntry.getSkinTextures().texture();
+    public ResourceLocation getSkinTexture() {
+        //? if >=1.21.9 {
+        /*return this.playerEntry.getSkin().body().texturePath();
+        *///?} else if >=1.20.2 {
+        return this.playerEntry.getSkin().texture();
+        //?} else
+        /*return this.playerEntry.getSkinLocation();*/
     }
 
     @Override
-    protected void dropInventory() {
+    //? if >=1.21.2 {
+    /*protected void dropEquipment(net.minecraft.server.level.ServerLevel world) {
+    *///?} else
+    protected void dropEquipment() {
     }
 
     @Override
@@ -86,12 +101,12 @@ public class ShellEntity extends OtherClientPlayerEntity {
     }
 
     @Override
-    public boolean shouldRenderName() {
+    public boolean shouldShowName() {
         return false;
     }
 
     @Override
-    public boolean isPartVisible(PlayerModelPart modelPart) {
+    public boolean isModelPartShown(PlayerModelPart modelPart) {
         boolean isWideModel = "default".equals(this.getModel());
 
         return isWideModel
@@ -104,24 +119,30 @@ public class ShellEntity extends OtherClientPlayerEntity {
     }
 
     @Override
-    protected PlayerListEntry getPlayerListEntry() {
+    protected PlayerInfo getPlayerInfo() {
         return this.playerEntry;
     }
 
-    private static PlayerListEntry getPlayerEntry(ShellState state) {
-        PlayerListEntry entry = PLAYER_ENTRY_CACHE.getIfPresent(state.getOwnerUuid());
+    private static PlayerInfo getPlayerEntry(ShellState state) {
+        PlayerInfo entry = PLAYER_ENTRY_CACHE.getIfPresent(state.getOwnerUuid());
         if (entry == null) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
+            Minecraft client = Minecraft.getInstance();
+            ClientPacketListener networkHandler = client.getConnection();
             if (networkHandler != null) {
-                entry = networkHandler.getPlayerListEntry(state.getOwnerUuid());
+                entry = networkHandler.getPlayerInfo(state.getOwnerUuid());
                 if (entry == null) {
-                    entry = networkHandler.getPlayerListEntry(state.getOwnerName());
+                    entry = networkHandler.getPlayerInfo(state.getOwnerName());
                 }
             }
 
             if (entry == null) {
-                entry = new PlayerListEntry(new GameProfile(state.getOwnerUuid(), state.getOwnerName()), false);
+                //? if >=1.19.3 {
+                entry = new PlayerInfo(new GameProfile(state.getOwnerUuid(), state.getOwnerName()), false);
+                //?} else {
+                /*entry = new PlayerInfo(new net.minecraft.network.protocol.game.ClientboundPlayerInfoPacket.PlayerUpdate(
+                        new GameProfile(state.getOwnerUuid(), state.getOwnerName()), 0, null, null, null),
+                        net.minecraft.util.SignatureValidator.NO_VALIDATION, false);
+                *///?}
             }
 
             PLAYER_ENTRY_CACHE.put(state.getOwnerUuid(), entry);

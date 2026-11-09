@@ -8,9 +8,6 @@ import me.shedaniel.autoconfig.ConfigData;
 import me.shedaniel.autoconfig.annotation.Config;
 import me.shedaniel.autoconfig.annotation.ConfigEntry;
 import me.shedaniel.autoconfig.serializer.GsonConfigSerializer;
-import net.minecraft.entity.EntityType;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -46,10 +43,6 @@ public class SyncClothConfig implements SyncConfig, ConfigData {
 
     @ConfigEntry.Category(value = "energy")
     @ConfigEntry.Gui.Tooltip(count = 2)
-    public long shellConstructorCapacity = SyncConfig.super.shellConstructorCapacity();
-
-    @ConfigEntry.Category(value = "energy")
-    @ConfigEntry.Gui.Tooltip(count = 2)
     public long shellStorageCapacity = SyncConfig.super.shellStorageCapacity();
 
     @ConfigEntry.Category(value = "energy")
@@ -63,11 +56,6 @@ public class SyncClothConfig implements SyncConfig, ConfigData {
     @ConfigEntry.Category(value = "energy")
     @ConfigEntry.Gui.Tooltip(count = 2)
     public int shellStorageMaxUnpoweredLifespan = SyncConfig.super.shellStorageMaxUnpoweredLifespan();
-
-    @ConfigEntry.Category(value = "energy")
-    @ConfigEntry.Gui.Tooltip(count = 2)
-    @ConfigEntry.Gui.RequiresRestart
-    public List<EnergyMapEntry> energyMap = SyncConfig.super.energyMap().stream().map(x -> new EnergyMapEntry(x.entityId(), x.outputEnergyQuantity())).collect(Collectors.toCollection(ArrayList::new));
 
     @ConfigEntry.Category(value = "sync")
     @ConfigEntry.Gui.Tooltip
@@ -111,11 +99,6 @@ public class SyncClothConfig implements SyncConfig, ConfigData {
     }
 
     @Override
-    public long shellConstructorCapacity() {
-        return this.shellConstructorCapacity;
-    }
-
-    @Override
     public long shellStorageCapacity() {
         return this.shellStorageCapacity;
     }
@@ -133,12 +116,6 @@ public class SyncClothConfig implements SyncConfig, ConfigData {
     @Override
     public int shellStorageMaxUnpoweredLifespan() {
         return this.shellStorageMaxUnpoweredLifespan;
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<SyncConfig.EnergyMapEntry> energyMap() {
-        return (List<SyncConfig.EnergyMapEntry>)(List<?>)this.energyMap;
     }
 
     @Override
@@ -216,37 +193,6 @@ public class SyncClothConfig implements SyncConfig, ConfigData {
 
         @ConfigEntry.Gui.Excluded
         public HashSet<UUID> cache = new HashSet<>();
-    }
-
-    public static class EnergyMapEntry implements SyncConfig.EnergyMapEntry {
-        @ConfigEntry.Gui.RequiresRestart
-        public String entityId;
-
-        @ConfigEntry.Gui.RequiresRestart
-        public long outputEnergyQuantity;
-
-        public EnergyMapEntry() {
-            this(EntityType.PIG, 16);
-        }
-
-        public EnergyMapEntry(EntityType<?> entityType, long outputEnergyQuantity) {
-            this(Registries.ENTITY_TYPE.getId(entityType).toString(), outputEnergyQuantity);
-        }
-
-        public EnergyMapEntry(String entityId, long outputEnergyQuantity) {
-            this.entityId = entityId;
-            this.outputEnergyQuantity = outputEnergyQuantity;
-        }
-
-        @Override
-        public String entityId() {
-            return this.entityId;
-        }
-
-        @Override
-        public long outputEnergyQuantity() {
-            return this.outputEnergyQuantity;
-        }
     }
 
     public static class ShellPriorityWrapper implements ShellPriorityEntry {

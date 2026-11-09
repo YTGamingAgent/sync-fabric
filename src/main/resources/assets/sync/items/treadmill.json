@@ -1,0 +1,10 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "sync:item/treadmill",
+    "model": {
+      "type": "sync:block_entity",
+      "block": "sync:treadmill"
+    }
+  }
+}

@@ -1,339 +1,390 @@
 package net.stacking.sync_mod.block.entity;
 
-import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.DoubleBlockProperties;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.passive.PassiveEntity;
-import net.minecraft.entity.passive.TameableEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.stacking.sync_mod.Sync;
-import net.stacking.sync_mod.api.event.EntityFitnessEvents;
+import net.stacking.sync_mod.util.EntityUtil;
+
+import net.stacking.sync_mod.util.nbt.Nbt;
 import net.stacking.sync_mod.block.TreadmillBlock;
-import net.stacking.sync_mod.config.SyncConfig;
-import org.jetbrains.annotations.Nullable;
-import software.bernie.geckolib.animatable.GeoBlockEntity;
-import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.animation.AnimatableManager;
-import software.bernie.geckolib.util.GeckoLibUtil;
+import net.stacking.sync_mod.api.event.EntityFitnessEvents;
+import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.NeutralMob;
+import net.minecraft.world.entity.TamableAnimal;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.Spider;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import team.reborn.energy.api.EnergyStorage;
 import team.reborn.energy.api.EnergyStorageUtil;
 
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-@SuppressWarnings("UnstableApiUsage")
-public class TreadmillBlockEntity extends BlockEntity
-        implements DoubleBlockEntity, TickableBlockEntity, EnergyStorage, GeoBlockEntity {
+@SuppressWarnings({"UnstableApiUsage"})
+public class TreadmillBlockEntity extends BlockEntity implements DoubleBlockEntity, TickableBlockEntity, EnergyStorage {
+    /**
+     * Energy produced per tick by any valid runner (passive or neutral mob).
+     */
+    public static final long ENERGY_PER_TICK = 200;
 
-    public static final long CAPACITY = 64_000L;
+    /**
+     * Ticks it takes for the runner's legs to reach full speed (ticks -> seconds -> minutes).
+     */
+    private static final int MAX_RUNNING_TIME = 20 * 60 * 15;
+    private static final double MAX_SQUARED_DISTANCE = 0.5;
 
-    private static final long   PASSIVE_ANIMAL_ENERGY_PER_TICK = 200L;
-
-    // Within 1 block squared — loose enough to absorb minor physics jitter
-    // while still releasing the runner if it genuinely wanders off.
-    private static final double MAX_SQUARED_DISTANCE = 1.0;
-
-    // ── Animation
-    private static final float TREADMILL_LIMB_SPEED = 0.6f;
-
-    private static final Map<net.minecraft.entity.EntityType<?>, Long> ENERGY_MAP;
-
-    // Server-side only. The actual entity reference is resolved from UUID each tick.
+    private UUID runnerUUID;
+    private Integer runnerId;
     private Entity runner;
+    private int runningTime;
+    private long storedEnergy;
+    private long producibleEnergyQuantity;
+    private TreadmillBlockEntity cachedBackPart;
 
-    // Synced to the client via toUpdatePacket / toInitialChunkDataNbt so that
-    // onClientTick can look up the entity and drive its limb animation.
-    private UUID runnerUuid;
-
-    private int  runningTime;
-    private long energy;
-
-    private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public TreadmillBlockEntity(BlockPos pos, BlockState state) {
         super(SyncBlockEntities.TREADMILL, pos, state);
     }
 
-    // ── GeoBlockEntity
 
-    @Override public void registerControllers(AnimatableManager.ControllerRegistrar c) {}
-    @Override public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
-
-    // ── Client sync
-    // Without these two overrides the client-side block entity instance never
-    // receives the runner UUID, so onClientTick can never drive the animation.
-
-    @Nullable
-    @Override
-    public Packet<ClientPlayPacketListener> toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
-    }
-
-    @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registryLookup) {
-        return createNbt(registryLookup);
-    }
-
-    /**
-     * Marks dirty for saving AND fires an incremental update packet to every
-     * client watching this chunk. Call whenever runnerUuid changes so the
-     * client animates immediately rather than waiting for the next chunk reload.
-     */
-    private void sync() {
-        markDirty();
-        if (this.world != null && !this.world.isClient) {
-            this.world.updateListeners(
-                    this.pos, getCachedState(), getCachedState(), Block.NOTIFY_LISTENERS);
-        }
-    }
-
-    // ── TickableBlockEntity
-    @Override
-    public void onClientTick(net.minecraft.world.World world, BlockPos pos, BlockState state) {
-        // this.runner is never set on the client — only the synced UUID is available.
-        // Search near the treadmill for the specific entity and animate it.
-        if (this.runnerUuid == null) return;
-
-        Direction facing  = state.get(TreadmillBlock.FACING);
-        Vec3d     pivot   = computeTreadmillPivot(pos, facing);
-
-        // Search a box that comfortably covers the full 2-block treadmill footprint.
-        Box searchBox = new Box(
-                pivot.x - 2, pos.getY() - 0.5, pivot.z - 2,
-                pivot.x + 2, pos.getY() + 2.5,  pivot.z + 2);
-
-        List<LivingEntity> candidates = world.getEntitiesByClass(
-                LivingEntity.class, searchBox,
-                e -> !e.isPlayer() && this.runnerUuid.equals(e.getUuid()));
-
-        if (candidates.isEmpty()) return;
-
-        LivingEntity living = candidates.get(0);
-
-        // Drive the walking animation at a calm treadmill pace.
-        // LimbAnimator manages the internal swing counter; we just set the speed.
-        living.limbAnimator.updateLimbs(TREADMILL_LIMB_SPEED, 1.0f);
-
-        // Lock the pig's facing toward the console on the client too,
-        // so the head never snaps or drifts between server corrections.
-        float yaw = facing.getOpposite().asRotation();
-        living.setYaw(yaw);
-        living.setHeadYaw(yaw);
-        living.setBodyYaw(yaw);
-    }
-
-    @Override
-    public void onServerTick(net.minecraft.world.World world, BlockPos pos, BlockState state) {
-        if (!(world instanceof ServerWorld serverWorld)) return;
-        if (!TreadmillBlock.isBack(state)) return;
-
-        // Resolve runner entity from UUID after chunk reload.
-        if (this.runner == null && this.runnerUuid != null) {
-            this.runner = serverWorld.getEntity(this.runnerUuid);
+    private void setRunner(Entity entity) {
+        if (this.runner == entity) {
+            return;
         }
 
-        if (this.runner != null) {
-            Direction facing = state.get(TreadmillBlock.FACING);
-            Vec3d     pivot  = computeTreadmillPivot(pos, facing);
-
-            if (!isValidRunner(this.runner) || !isEntityNear(this.runner, pivot)) {
-                releaseRunner();
-                return;
-            }
-
-            if (!this.runner.isPlayer()) {
-                // Face the pig toward the console (opposite of belt run direction).
-                float yaw = facing.getOpposite().asRotation();
-                this.runner.updatePositionAndAngles(pivot.x, pivot.y, pivot.z, yaw, 0);
-                this.runner.setHeadYaw(yaw);
-                this.runner.setBodyYaw(yaw);
-            }
-
-            if (this.runner instanceof LivingEntity living) {
-                living.setDespawnCounter(0);
-            }
-
-            // Generate energy.
-            Long perTick = getOutputEnergyQuantityForEntity(this.runner, this);
-            if (perTick != null && perTick > 0) {
-                long space = CAPACITY - this.energy;
-                if (space > 0) {
-                    this.energy += Math.min(space, perTick);
-                    this.runningTime++;
-                    if (this.runningTime % 100 == 0) markDirty();
-                }
-            }
-        }
-
-        // Push stored energy to adjacent machines.
-        if (this.energy > 0) transferEnergy(world, pos, state);
-    }
-
-    private void releaseRunner() {
         if (this.runner != null) {
             EntityFitnessEvents.STOP_RUNNING.invoker().onStopRunning(this.runner, this);
         }
-        this.runner      = null;
-        this.runnerUuid  = null;
-        this.runningTime = 0;
-        sync(); // notify clients the runner is gone
+
+        if (entity == null) {
+            this.runningTime = 0;
+            this.producibleEnergyQuantity = 0;
+        }
+        this.runner = entity;
+
+        if (this.runner != null) {
+            EntityFitnessEvents.START_RUNNING.invoker().onStartRunning(this.runner, this);
+        }
+
+        if (this.level != null && !this.level.isClientSide()) {
+            this.setChanged();
+            this.sync();
+        }
     }
 
-    private void transferEnergy(net.minecraft.world.World world,
-                                BlockPos backPos, BlockState state) {
-        BlockPos frontPos = backPos.offset(state.get(TreadmillBlock.FACING));
-        for (BlockPos origin : new BlockPos[]{backPos, frontPos}) {
-            for (Direction dir : Direction.values()) {
-                if (this.energy <= 0) return;
-                EnergyStorage target = EnergyStorage.SIDED.find(
-                        world, origin.offset(dir), dir.getOpposite());
-                if (target != null && target.supportsInsertion()) {
-                    EnergyStorageUtil.move(this, target, Long.MAX_VALUE, null);
-                }
+    /**
+     * @return {@code true} if a valid mob is currently running on this treadmill (either part can be asked).
+     */
+    public boolean isRunning() {
+        TreadmillBlockEntity back = this.getBackPart();
+        return back != null && back.runner != null;
+    }
+
+    @Override
+    public void onClientTick(Level world, BlockPos pos, BlockState state) {
+        if (this.runnerId != null) {
+            this.setRunner(this.runnerId == -1 ? null : world.getEntity(this.runnerId));
+            this.runnerId = null;
+        }
+
+        if (this.runner == null) {
+            return;
+        }
+
+        if (this.runner instanceof LivingEntity livingEntity) {
+            //? if >=1.19.4 {
+            livingEntity.walkAnimation.update((float)this.runningTime / MAX_RUNNING_TIME, 1.0f/*? if >=1.21.2 {*//*, 1.0f*//*?}*/);
+            //?} else
+            /*livingEntity.animationSpeed = (float)this.runningTime / MAX_RUNNING_TIME;*/
+        }
+        this.runningTime = Math.min(++this.runningTime, MAX_RUNNING_TIME);
+    }
+
+    @Override
+    public void onServerTick(Level world, BlockPos pos, BlockState state) {
+        if (this.runnerUUID != null && world instanceof ServerLevel serverWorld) {
+            this.setRunner(serverWorld.getEntity(this.runnerUUID));
+            this.runnerUUID = null;
+        }
+
+        if (this.runner == null) {
+            return;
+        }
+
+        Direction face = state.getValue(TreadmillBlock.FACING);
+        Vec3 anchor = computeTreadmillPivot(pos, face);
+        if (!isValidEntity(this.runner) || !isEntityNear(this.runner, anchor)) {
+            this.setRunner(null);
+            return;
+        }
+
+        float yaw = face.toYRot();
+        EntityUtil.absMoveTo(this.runner, anchor.x, anchor.y, anchor.z, yaw, 0);
+        this.runner.setYHeadRot(yaw);
+        this.runner.setYBodyRot(yaw);
+        this.runner.setYRot(yaw);
+        this.runner.yRotO = yaw;
+
+        if (this.runner instanceof Mob mobEntity) {
+            mobEntity.setNoActionTime(0);
+        }
+        this.storedEnergy = this.producibleEnergyQuantity;
+        this.transferEnergy(world, pos);
+        if (this.runningTime < MAX_RUNNING_TIME) {
+            ++this.runningTime;
+            if (this.runningTime % 1000 == 0) {
+                this.setChanged();
+                this.sync();
             }
         }
     }
 
-    /** Called by TreadmillBlock when an entity steps on or is placed on either block. */
     public void onSteppedOn(BlockPos pos, BlockState state, Entity entity) {
-        if (this.world == null || this.world.isClient) return;
-        if (!TreadmillBlock.isBack(state)) return;
-        if (this.runner != null) return;
+        if (this.runner != null || !isEntityNear(entity, computeTreadmillPivot(pos, state.getValue(TreadmillBlock.FACING)))) {
+            return;
+        }
 
-        Vec3d pivot = computeTreadmillPivot(pos, state.get(TreadmillBlock.FACING));
-        if (!isEntityNear(entity, pivot)) return;
-        if (!isValidRunner(entity)) return;
-
-        this.runner      = entity;
-        this.runnerUuid  = entity.getUuid();
-        this.runningTime = 0;
-        EntityFitnessEvents.START_RUNNING.invoker().onStartRunning(entity, this);
-        sync(); // notify clients a runner has arrived
-    }
-
-    public boolean isOverheated() { return false; }
-
-    // ── EnergyStorage ─────────────────────────────────────────────────────────
-
-    @Override
-    public long insert(long maxAmount, TransactionContext transaction) {
-        if (maxAmount <= 0) return 0;
-        long accepted = Math.min(CAPACITY - this.energy, maxAmount);
-        if (accepted > 0) { this.energy += accepted; markDirty(); }
-        return accepted;
+        Long energy = isValidEntity(entity) ? getOutputEnergyQuantityForEntity(entity, this) : null;
+        if (energy != null) {
+            this.setRunner(entity);
+            this.producibleEnergyQuantity = energy;
+        }
     }
 
     @Override
-    public long extract(long maxAmount, TransactionContext transaction) {
-        if (maxAmount <= 0) return 0;
-        long extracted = Math.min(this.energy, maxAmount);
-        if (extracted > 0) { this.energy -= extracted; markDirty(); }
+    public long getAmount() {
+        TreadmillBlockEntity back = this.getBackPart();
+        return back == null ? 0 : back.storedEnergy;
+    }
+
+    @Override
+    public long getCapacity() {
+        TreadmillBlockEntity back = this.getBackPart();
+        if (back == null || back.runner == null) {
+            return 0;
+        }
+        return back.producibleEnergyQuantity;
+    }
+
+    @Override
+    public boolean supportsInsertion() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsExtraction() {
+        return true;
+    }
+
+    @Override
+    public long insert(long maxAmount, TransactionContext context) {
+        return 0;
+    }
+
+    @Override
+    public long extract(long maxAmount, TransactionContext context) {
+        TreadmillBlockEntity back = this.getBackPart();
+        if (back == null) {
+            return 0;
+        }
+
+        long extracted = Math.min(back.storedEnergy, maxAmount);
+        context.addCloseCallback((ctx, result) -> {
+            if (result.wasCommitted()) {
+                back.storedEnergy -= extracted;
+            }
+        });
         return extracted;
     }
 
-    @Override public long getAmount()             { return this.energy; }
-    @Override public long getCapacity()            { return CAPACITY;    }
-    @Override public boolean supportsInsertion()  { return false;       }
-    @Override public boolean supportsExtraction() { return true;        }
+    private void transferEnergy(Level world, BlockPos pos) {
+        TreadmillBlockEntity back = this.getBackPart();
+        if (back == null) {
+            return;
+        }
 
-    // ── DoubleBlockEntity ──────────────────────────────────────────────────────
-
-    @Override
-    public DoubleBlockProperties.Type getBlockType(BlockState state) {
-        return state.get(TreadmillBlock.PART) == TreadmillBlock.Part.BACK
-                ? DoubleBlockProperties.Type.FIRST
-                : DoubleBlockProperties.Type.SECOND;
-    }
-
-    // ── NBT ───────────────────────────────────────────────────────────────────
-
-    @Override
-    protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.readNbt(nbt, registryLookup);
-        this.runnerUuid  = nbt.containsUuid("Runner") ? nbt.getUuid("Runner") : null;
-        this.energy      = nbt.getLong("Energy");
-        this.runningTime = nbt.getInt("RunningTime");
-        this.runner      = null; // always re-resolve from UUID on server
+        for (int i = 0; i < 2; ++i) {
+            for (Direction direction : Direction.values()) {
+                EnergyStorage target = EnergyStorage.SIDED.find(world, pos.relative(direction), direction.getOpposite());
+                if (target != null && target.supportsInsertion()) {
+                    EnergyStorageUtil.move(back, target, Long.MAX_VALUE, null);
+                    if (back.storedEnergy <= 0) {
+                        return;
+                    }
+                }
+            }
+            pos = pos.relative(this.getBlockState().getValue(TreadmillBlock.FACING));
+        }
     }
 
     @Override
-    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.writeNbt(nbt, registryLookup);
-        UUID uuid = this.runnerUuid != null ? this.runnerUuid
-                : this.runner     != null ? this.runner.getUuid()
-                : null;
-        if (uuid != null) nbt.putUuid("Runner", uuid);
-        nbt.putLong("Energy",      this.energy);
-        nbt.putInt ("RunningTime", this.runningTime);
+    public DoubleBlockCombiner.BlockType getBlockType(BlockState state) {
+        return TreadmillBlock.getTreadmillPart(state);
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
+    private TreadmillBlockEntity getBackPart() {
+        if (this.cachedBackPart != null || this.level == null) {
+            return this.cachedBackPart;
+        }
 
-    private static Long getOutputEnergyQuantityForEntity(Entity entity, EnergyStorage storage) {
-        if (entity instanceof PassiveEntity) return PASSIVE_ANIMAL_ENERGY_PER_TICK;
-        return EntityFitnessEvents.MODIFY_OUTPUT_ENERGY_QUANTITY.invoker()
-                .modifyOutputEnergyQuantity(entity, storage, ENERGY_MAP.get(entity.getType()));
+        if (TreadmillBlock.isBack(this.getBlockState())) {
+            this.cachedBackPart = this;
+        } else {
+            BlockPos backPartPos = this.worldPosition.relative(this.getBlockState().getValue(TreadmillBlock.FACING).getOpposite());
+            this.cachedBackPart = this.level.getBlockEntity(backPartPos, SyncBlockEntities.TREADMILL).orElse(null);
+        }
+        return this.cachedBackPart;
     }
 
-    private static boolean isValidRunner(Entity entity) {
-        if (entity == null || !entity.isAlive()) return false;
-        return !entity.isSpectator()
-                && !entity.isSneaking()
-                && !entity.isSwimming()
-                && (!(entity instanceof LivingEntity l) || (l.hurtTime <= 0 && !l.isBaby()))
-                && (!(entity instanceof TameableEntity t) || !t.isSitting());
+    protected void sync() {
+        if (this.level instanceof ServerLevel serverWorld) {
+            serverWorld.getChunkSource().blockChanged(this.worldPosition);
+        }
     }
 
-    private static boolean isEntityNear(Entity entity, Vec3d pos) {
-        return entity.squaredDistanceTo(pos) < MAX_SQUARED_DISTANCE;
+    @Override
+    public Packet<ClientGamePacketListener> getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    //? if >=1.21.6 {
+    /*@Override
+    public CompoundTag getUpdateTag(HolderLookup.Provider registryLookup) {
+        return this.saveWithoutMetadata(registryLookup);
+    }
+
+    // Data is kept in our own compound tag so the same code works on every version.
+    @Override
+    protected void saveAdditional(net.minecraft.world.level.storage.ValueOutput output) {
+        super.saveAdditional(output);
+        CompoundTag nbt = new CompoundTag();
+        this.writeData(nbt, this.level == null ? null : this.level.registryAccess());
+        output.store("sync", CompoundTag.CODEC, nbt);
+    }
+
+    @Override
+    protected void loadAdditional(net.minecraft.world.level.storage.ValueInput input) {
+        super.loadAdditional(input);
+        this.readData(input.read("sync", CompoundTag.CODEC).orElseGet(CompoundTag::new), input.lookup());
+    }
+    *///?} else if >=1.20.5 {
+    @Override
+    public CompoundTag getUpdateTag(HolderLookup.Provider registryLookup) {
+        return this.saveWithoutMetadata(registryLookup);
+    }
+
+    @Override
+    protected void saveAdditional(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        super.saveAdditional(nbt, registryLookup);
+        this.writeData(nbt, registryLookup);
+    }
+
+    @Override
+    protected void loadAdditional(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        super.loadAdditional(nbt, registryLookup);
+        this.readData(nbt, registryLookup);
+    }
+    //?} else {
+    /*@Override
+    public CompoundTag getUpdateTag() {
+        return this.saveWithoutMetadata();
+    }
+
+    @Override
+    protected void saveAdditional(CompoundTag nbt) {
+        super.saveAdditional(nbt);
+        this.writeData(nbt, null);
+    }
+
+    @Override
+    public void load(CompoundTag nbt) {
+        super.load(nbt);
+        this.readData(nbt, null);
+    }
+    *///?}
+
+    private void readData(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        this.runnerUUID = Nbt.getUuid(nbt, "runner");
+        this.runnerId = Nbt.contains(nbt, "runnerId", Tag.TAG_INT) ? Nbt.getInt(nbt, "runnerId") : -1;
+        this.producibleEnergyQuantity = Nbt.getLong(nbt, "energy");
+        this.runningTime = Nbt.getInt(nbt, "time");
+    }
+
+    private void writeData(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        UUID runnerUuid = this.runnerUUID == null ? this.runner == null ? null : this.runner.getUUID() : this.runnerUUID;
+        if (runnerUuid != null) {
+            Nbt.putUuid(nbt, "runner", runnerUuid);
+        }
+        if (this.runner != null) {
+            nbt.putInt("runnerId", this.runner.getId());
+        }
+        nbt.putLong("energy", this.producibleEnergyQuantity);
+        nbt.putInt("time", this.runningTime);
+    }
+
+    private static Long getOutputEnergyQuantityForEntity(Entity entity, EnergyStorage energyStorage) {
+        return EntityFitnessEvents.MODIFY_OUTPUT_ENERGY_QUANTITY.invoker().modifyOutputEnergyQuantity(entity, energyStorage, ENERGY_PER_TICK);
     }
 
     /**
-     * The pivot is the BOUNDARY between the BACK and FRONT blocks — the pig's
-     * entity-centre sits right at this seam so its body straddles both blocks,
-     * with its snout reaching into the BACK block touching the console panel.
-     *
-     * For a SOUTH-facing treadmill (BACK=placed block, FRONT=one block south):
-     *   Boundary Z = backPos.getZ() + 1.0  (south face of BACK = north face of FRONT)
-     *   That places pig centre at Z+1, snout reaching to Z+0.5 (mid-console) ✓
+     * A valid runner is a passive or neutral mob (anything that isn't a monster, plus monsters that are
+     * only hostile when provoked, such as endermen). Spiders don't count.
      */
-    public static Vec3d computeTreadmillPivot(BlockPos pos, Direction facing) {
-        double x = switch (facing) {
-            case WEST -> pos.getX();          // west face of BACK = east face of FRONT
-            case EAST -> pos.getX() + 1.0;    // east face of BACK = west face of FRONT
-            default   -> pos.getX() + 0.5;    // centred on X for N/S facings
+    private static boolean isValidRunnerType(Entity entity) {
+        if (!(entity instanceof Mob) || entity instanceof Spider) {
+            return false;
+        }
+        return !(entity instanceof Enemy) || entity instanceof NeutralMob;
+    }
+
+    private static boolean isValidEntity(Entity entity) {
+        if (entity == null || !entity.isAlive() || !isValidRunnerType(entity)) {
+            return false;
+        }
+
+        return (
+            !entity.isSpectator() && !entity.isShiftKeyDown() && !entity.isSwimming() &&
+            (!(entity instanceof LivingEntity livingEntity) || livingEntity.hurtTime <= 0 && !livingEntity.isBaby()) &&
+            (!(entity instanceof Mob mobEntity) || !mobEntity.isLeashed()) &&
+            (!(entity instanceof TamableAnimal tameableEntity) || !tameableEntity.isOrderedToSit())
+        );
+    }
+
+    private static boolean isEntityNear(Entity entity, Vec3 pos) {
+        return entity.distanceToSqr(pos) < MAX_SQUARED_DISTANCE;
+    }
+
+    /**
+     * The point where a runner stands: the seam between the back part (at {@code pos}) and the front part.
+     */
+    public static Vec3 computeTreadmillPivot(BlockPos pos, Direction face) {
+        double x = switch (face) {
+            case WEST -> pos.getX();
+            case EAST -> pos.getX() + 1;
+            default -> pos.getX() + 0.5D;
         };
-        double z = switch (facing) {
-            case SOUTH -> pos.getZ() + 1.0;   // south face of BACK = north face of FRONT
-            case NORTH -> pos.getZ();          // north face of BACK = south face of FRONT
-            default    -> pos.getZ() + 0.5;   // centred on Z for E/W facings
+        double y = pos.getY() + 0.175;
+        double z = switch (face) {
+            case SOUTH -> pos.getZ() + 1;
+            case NORTH -> pos.getZ();
+            default -> pos.getZ() + 0.5D;
         };
-        return new Vec3d(x, pos.getY() + 0.175, z);
+        return new Vec3(x, y, z);
     }
 
     static {
-        ENERGY_MAP = Sync.getConfig().energyMap().stream()
-                .collect(Collectors.toUnmodifiableMap(
-                        SyncConfig.EnergyMapEntry::getEntityType,
-                        SyncConfig.EnergyMapEntry::outputEnergyQuantity,
-                        (a, b) -> a));
-        EnergyStorage.SIDED.registerForBlockEntities(
-                (be, dir) -> (EnergyStorage) be,
-                SyncBlockEntities.TREADMILL);
+        EnergyStorage.SIDED.registerForBlockEntities((x, __) -> (EnergyStorage)x, SyncBlockEntities.TREADMILL);
     }
 }

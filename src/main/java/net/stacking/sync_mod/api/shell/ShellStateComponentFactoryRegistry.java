@@ -1,11 +1,11 @@
 package net.stacking.sync_mod.api.shell;
 
-import net.minecraft.server.network.ServerPlayerEntity;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import net.minecraft.server.level.ServerPlayer;
 
 /**
  * An object that allows registering custom {@link ShellStateComponent}.
@@ -37,7 +37,7 @@ public interface ShellStateComponentFactoryRegistry {
      * @param factory The factory.
      * @return The registered factory.
      */
-    default ShellStateComponentFactory register(Function<@Nullable ServerPlayerEntity, ShellStateComponent> factory) {
+    default ShellStateComponentFactory register(Function<@Nullable ServerPlayer, ShellStateComponent> factory) {
         return register(new ShellStateComponentFactory() {
             @Override
             public ShellStateComponent empty() {
@@ -45,7 +45,7 @@ public interface ShellStateComponentFactoryRegistry {
             }
 
             @Override
-            public ShellStateComponent of(ServerPlayerEntity player) {
+            public ShellStateComponent of(ServerPlayer player) {
                 return factory.apply(player);
             }
         });
@@ -57,7 +57,7 @@ public interface ShellStateComponentFactoryRegistry {
      * @param factory Creates a new instance of {@linkplain ShellStateComponent} that is synced with the player's state.
      * @return The registered factory.
      */
-    default ShellStateComponentFactory register(Supplier<ShellStateComponent> emptyFactory, Function<ServerPlayerEntity, ShellStateComponent> factory) {
+    default ShellStateComponentFactory register(Supplier<ShellStateComponent> emptyFactory, Function<ServerPlayer, ShellStateComponent> factory) {
         return register(new ShellStateComponentFactory() {
             @Override
             public ShellStateComponent empty() {
@@ -65,7 +65,7 @@ public interface ShellStateComponentFactoryRegistry {
             }
 
             @Override
-            public ShellStateComponent of(ServerPlayerEntity player) {
+            public ShellStateComponent of(ServerPlayer player) {
                 return factory.apply(player);
             }
         });
@@ -87,6 +87,6 @@ public interface ShellStateComponentFactoryRegistry {
          * @param player The player.
          * @return The {@linkplain ShellStateComponent}.
          */
-        ShellStateComponent of(ServerPlayerEntity player);
+        ShellStateComponent of(ServerPlayer player);
     }
 }

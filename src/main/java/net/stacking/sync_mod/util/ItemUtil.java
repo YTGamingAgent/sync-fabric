@@ -1,54 +1,67 @@
 package net.stacking.sync_mod.util;
 
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ArmorItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.stacking.sync_mod.Sync;
 import net.stacking.sync_mod.config.SyncConfig;
+//? if >=1.21.2 {
+/*import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.equipment.Equippable;
+*///?} else if >=1.19.4 {
+import net.minecraft.world.item.Equipable;
+//?} else {
+/*import net.minecraft.world.item.ArmorItem;
+*///?}
 
 public final class ItemUtil {
-    private static final TagKey<Item> WRENCHES = TagKey.of(Registries.ITEM.getKey(), Identifier.of("c", "wrenches"));
+    private static final TagKey<Item> WRENCHES = TagKey.create(GameRegistries.ITEM_KEY, IdUtil.of("c", "wrenches"));
 
+    /**
+     * An item works as a wrench if it's tagged c:wrenches or matches the "wrench" config option.
+     */
     public static boolean isWrench(ItemStack itemStack) {
-        return itemStack.isIn(WRENCHES) || itemStack.isIn(ItemTags.PICKAXES) && itemStack.getName().getString().toLowerCase().contains(Sync.getConfig().wrench());
-    }
+        if (itemStack.is(WRENCHES)) {
+            return true;
+        }
 
-    public static boolean isPickaxe(ItemStack itemStack) {
-        return itemStack.isIn(ItemTags.PICKAXES);
-    }
-
-    public static boolean isSword(ItemStack itemStack) {
-        return itemStack.isIn(ItemTags.SWORDS);
-    }
-
-    public static boolean isTool(ItemStack itemStack) {
-        return itemStack.contains(DataComponentTypes.TOOL);
+        SyncConfig config = Sync.getConfig();
+        ResourceLocation wrenchId = config.wrench() == null || config.wrench().isBlank() ? null : ResourceLocation.tryParse(config.wrench());
+        if (wrenchId == null) {
+            return false;
+        }
+        Item wrench = GameRegistries.get(GameRegistries.ITEM, wrenchId);
+        return wrench != Items.AIR && itemStack.is(wrench);
     }
 
     public static boolean isArmor(ItemStack itemStack) {
-        return itemStack.getItem() instanceof ArmorItem;
+        return getPreferredEquipmentSlot(itemStack).getType() == armorSlotType();
     }
 
-    public static boolean isValuable(ItemStack itemStack) {
-        return Sync.getConfig().isValuable(itemStack);
-    }
-
-    public static EquipmentSlot getEquipmentSlot(ItemStack itemStack) {
-        Item item = itemStack.getItem();
-        if (item instanceof ArmorItem armorItem) {
-            return armorItem.getSlotType();
-        }
-        return EquipmentSlot.MAINHAND;
-    }
-
+    /**
+     * The slot an item would be worn in (armor slots, offhand for shields, etc.), or the main hand.
+     */
     public static EquipmentSlot getPreferredEquipmentSlot(ItemStack itemStack) {
-        return getEquipmentSlot(itemStack);
+        //? if >=1.21.2 {
+        /*Equippable equippable = itemStack.get(DataComponents.EQUIPPABLE);
+        return equippable == null ? EquipmentSlot.MAINHAND : equippable.slot();
+        *///?} else if >=1.19.4 {
+        Equipable equipable = Equipable.get(itemStack);
+        return equipable == null ? EquipmentSlot.MAINHAND : equipable.getEquipmentSlot();
+        //?} else {
+        /*return itemStack.getItem() instanceof ArmorItem armorItem ? armorItem.getSlot() : EquipmentSlot.MAINHAND;
+        *///?}
+    }
+
+    public static EquipmentSlot.Type armorSlotType() {
+        //? if >=1.21 {
+        return EquipmentSlot.Type.HUMANOID_ARMOR;
+        //?} else {
+        /*return EquipmentSlot.Type.ARMOR;
+        *///?}
     }
 
     private ItemUtil() { }

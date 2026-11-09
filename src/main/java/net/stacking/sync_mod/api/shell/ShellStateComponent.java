@@ -1,22 +1,24 @@
 package net.stacking.sync_mod.api.shell;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.collection.DefaultedList;
+import net.stacking.sync_mod.util.nbt.Nbt;
+import net.stacking.sync_mod.util.nbt.ItemStackNbt;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.util.Collection;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.NonNullList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 
 public class ShellStateComponent {
     private static final int INVENTORY_SIZE = 41; // 36 main + 4 armor + 1 offhand
 
-    private DefaultedList<ItemStack> items;
+    private NonNullList<ItemStack> items;
     private int level;
     private int levelTotal;
     private int levelProgress;
@@ -26,10 +28,10 @@ public class ShellStateComponent {
     private float health;
 
     public ShellStateComponent() {
-        this.items = DefaultedList.ofSize(INVENTORY_SIZE, ItemStack.EMPTY);
+        this.items = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
     }
 
-    public ShellStateComponent(ServerPlayerEntity player) {
+    public ShellStateComponent(ServerPlayer player) {
         this();
         // Copy player data
     }
@@ -41,14 +43,14 @@ public class ShellStateComponent {
                 .reduce(new ShellStateComponent(), ShellStateComponent::combine);
     }
 
-    public static ShellStateComponent of(ServerPlayerEntity player) {
+    public static ShellStateComponent of(ServerPlayer player) {
         Collection<ShellStateComponentFactoryRegistry.ShellStateComponentFactory> factories = ShellStateComponentFactoryRegistry.getInstance().getValues();
         return factories.stream()
                 .map(f -> f.of(player))
                 .reduce(new ShellStateComponent(), ShellStateComponent::combine);
     }
 
-    public DefaultedList<ItemStack> getItems() {
+    public NonNullList<ItemStack> getItems() {
         return this.items;
     }
 
@@ -63,7 +65,7 @@ public class ShellStateComponent {
 
     public ShellStateComponent clone() {
         ShellStateComponent copy = new ShellStateComponent();
-        copy.items = this.items.stream().map(ItemStack::copy).collect(Collectors.toCollection(() -> DefaultedList.ofSize(INVENTORY_SIZE, ItemStack.EMPTY)));
+        copy.items = this.items.stream().map(ItemStack::copy).collect(Collectors.toCollection(() -> NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY)));
         copy.level = this.level;
         copy.levelTotal = this.levelTotal;
         copy.levelProgress = this.levelProgress;
@@ -74,21 +76,20 @@ public class ShellStateComponent {
         return copy;
     }
 
-    public void applyToPlayer(ServerPlayerEntity player, RegistryWrapper.WrapperLookup registryLookup) {
+    public void applyToPlayer(ServerPlayer player, HolderLookup.Provider registryLookup) {
         // Apply component data to player
     }
 
-    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public CompoundTag writeNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         Objects.requireNonNull(nbt, "nbt");
-        Objects.requireNonNull(registryLookup, "registryLookup");
 
-        NbtList list = new NbtList();
+        ListTag list = new ListTag();
         for (int i = 0; i < this.items.size(); i++) {
             ItemStack stack = this.items.get(i);
             if (!stack.isEmpty()) {
-                NbtCompound entry = new NbtCompound();
+                CompoundTag entry = new CompoundTag();
                 entry.putInt("slot", i);
-                entry.put("stack", stack.encode(registryLookup));
+                entry.put("stack", ItemStackNbt.save(stack, registryLookup));
                 list.add(entry);
             }
         }
@@ -106,32 +107,31 @@ public class ShellStateComponent {
         return nbt;
     }
 
-    public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public void readNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         Objects.requireNonNull(nbt, "nbt");
-        Objects.requireNonNull(registryLookup, "registryLookup");
 
         this.items.clear();
-        this.items = DefaultedList.ofSize(INVENTORY_SIZE, ItemStack.EMPTY);
+        this.items = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
 
-        if (nbt.contains("items", NbtElement.LIST_TYPE)) {
-            NbtList list = nbt.getList("items", NbtElement.COMPOUND_TYPE);
+        if (Nbt.contains(nbt, "items", Tag.TAG_LIST)) {
+            ListTag list = Nbt.getList(nbt, "items", Tag.TAG_COMPOUND);
             for (int i = 0; i < list.size(); i++) {
-                NbtCompound entry = list.getCompound(i);
-                int slot = entry.getInt("slot");
-                if (slot >= 0 && slot < this.items.size() && entry.contains("stack", NbtElement.COMPOUND_TYPE)) {
-                    this.items.set(slot, ItemStack.fromNbtOrEmpty(registryLookup, entry.getCompound("stack")));
+                CompoundTag entry = Nbt.getCompound(list, i);
+                int slot = Nbt.getInt(entry, "slot");
+                if (slot >= 0 && slot < this.items.size() && Nbt.contains(entry, "stack", Tag.TAG_COMPOUND)) {
+                    this.items.set(slot, ItemStackNbt.load(Nbt.getCompound(entry, "stack"), registryLookup));
                 }
             }
         }
 
-        this.level = nbt.getInt("level");
-        this.levelTotal = nbt.getInt("levelTotal");
-        this.levelProgress = nbt.getInt("levelProgress");
+        this.level = Nbt.getInt(nbt, "level");
+        this.levelTotal = Nbt.getInt(nbt, "levelTotal");
+        this.levelProgress = Nbt.getInt(nbt, "levelProgress");
 
-        this.exhaustion = nbt.getFloat("exhaustion");
-        this.saturation = nbt.getFloat("saturation");
-        this.food = nbt.getInt("food");
-        this.health = nbt.getFloat("health");
+        this.exhaustion = Nbt.getFloat(nbt, "exhaustion");
+        this.saturation = Nbt.getFloat(nbt, "saturation");
+        this.food = Nbt.getInt(nbt, "food");
+        this.health = Nbt.getFloat(nbt, "health");
     }
 
     @Override

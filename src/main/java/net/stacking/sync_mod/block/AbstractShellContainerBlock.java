@@ -1,253 +1,371 @@
 package net.stacking.sync_mod.block;
 
+//? if >=1.20.3
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.block.enums.DoubleBlockHalf;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.BooleanProperty;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.BlockMirror;
-import net.minecraft.util.BlockRotation;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.WorldAccess;
 import net.stacking.sync_mod.block.entity.AbstractShellContainerBlockEntity;
 import net.stacking.sync_mod.block.entity.TickableBlockEntity;
+import net.stacking.sync_mod.util.ItemUtil;
+import net.minecraft.world.level.block.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.*;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+//? if >=1.20.5 && <1.21.2
+import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
+import net.minecraft.world.level.block.LevelEvent;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+//? if <1.21.2
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
+//? if >=1.21.2 {
+/*import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ScheduledTickAccess;
+*///?}
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.pathfinder.PathComputationType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
 @SuppressWarnings("deprecation")
-public abstract class AbstractShellContainerBlock extends BlockWithEntity {
+public abstract class AbstractShellContainerBlock extends BaseEntityBlock {
+    public static final EnumProperty<DoubleBlockHalf> HALF = BlockStateProperties.DOUBLE_BLOCK_HALF;
+    //? if >=1.21.2 {
+    /*public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+    *///?} else
+    public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final BooleanProperty OPEN = BlockStateProperties.OPEN;
+    public static final EnumProperty<ComparatorOutputType> OUTPUT = EnumProperty.create("output", ComparatorOutputType.class);
 
-    public static final EnumProperty<DoubleBlockHalf>       HALF    = Properties.DOUBLE_BLOCK_HALF;
-    public static final EnumProperty<Direction>             FACING  = Properties.HORIZONTAL_FACING;
-    public static final BooleanProperty                     OPEN    = BooleanProperty.of("open");
-    public static final EnumProperty<ComparatorOutputType>  OUTPUT  =
-            EnumProperty.of("output", ComparatorOutputType.class);
+    private static final VoxelShape SOLID_SHAPE_TOP;
+    private static final VoxelShape SOLID_SHAPE_BOTTOM;
+    private static final VoxelShape NORTH_SHAPE_TOP;
+    private static final VoxelShape NORTH_SHAPE_BOTTOM;
+    private static final VoxelShape SOUTH_SHAPE_TOP;
+    private static final VoxelShape SOUTH_SHAPE_BOTTOM;
+    private static final VoxelShape EAST_SHAPE_TOP;
+    private static final VoxelShape EAST_SHAPE_BOTTOM;
+    private static final VoxelShape WEST_SHAPE_TOP;
+    private static final VoxelShape WEST_SHAPE_BOTTOM;
 
-    // ── Hitbox shapes ─────────────────────────────────────────────────────────
-    private static final VoxelShape SHAPE_LOWER = VoxelShapes.fullCube();
-    private static final VoxelShape SHAPE_UPPER = VoxelShapes.fullCube();
-
-    protected AbstractShellContainerBlock(Settings settings) {
+    protected AbstractShellContainerBlock(Properties settings) {
         super(settings);
-        this.setDefaultState(this.stateManager.getDefaultState()
-                .with(HALF,   DoubleBlockHalf.LOWER)
-                .with(FACING, Direction.NORTH)
-                .with(OPEN,   false)
-                .with(OUTPUT, ComparatorOutputType.PROGRESS));
+        this.registerDefaultState(
+            this.getStateDefinition().any()
+                .setValue(OPEN, false)
+                .setValue(HALF, DoubleBlockHalf.LOWER)
+                .setValue(FACING, Direction.NORTH)
+                .setValue(OUTPUT, ComparatorOutputType.PROGRESS)
+        );
     }
 
+    //? if >=1.20.3 {
     @Override
-    protected abstract MapCodec<? extends AbstractShellContainerBlock> getCodec();
+    public abstract MapCodec<? extends AbstractShellContainerBlock> codec();
+    //?}
 
-    // ── Shape overrides ───────────────────────────────────────────────────────
 
-    @Override
-    protected VoxelShape getOutlineShape(BlockState state, BlockView world,
-                                         BlockPos pos, ShapeContext context) {
-        return state.get(HALF) == DoubleBlockHalf.LOWER ? SHAPE_LOWER : SHAPE_UPPER;
-    }
+    public static void setOpen(BlockState state, Level world, BlockPos pos, boolean open) {
+        if (state.getValue(OPEN) != open) {
+            world.setBlock(pos, state.setValue(OPEN, open), Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
 
-    @Override
-    protected VoxelShape getCollisionShape(BlockState state, BlockView world,
-                                           BlockPos pos, ShapeContext context) {
-        return state.get(HALF) == DoubleBlockHalf.LOWER ? SHAPE_LOWER : SHAPE_UPPER;
-    }
-
-    // ── Existing helpers ──────────────────────────────────────────────────────
-
-    public static boolean isBottom(BlockState state) {
-        return state.get(HALF) == DoubleBlockHalf.LOWER;
+            BlockPos secondPos = pos.relative(getDirectionTowardsAnotherPart(state));
+            BlockState secondState = world.getBlockState(secondPos);
+            if (secondState.is(state.getBlock())) {
+                world.setBlock(secondPos, secondState.setValue(OPEN, open), Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
+            }
+        }
     }
 
     public static boolean isOpen(BlockState state) {
-        return state.get(OPEN);
+        return state.getValue(OPEN);
     }
 
-    public static DoubleBlockHalf getShellContainerHalf(BlockState state) {
-        return state.get(HALF);
+    public static boolean isBottom(BlockState state) {
+        return state.getValue(HALF) == DoubleBlockHalf.LOWER;
+    }
+
+    public static DoubleBlockCombiner.BlockType getShellContainerHalf(BlockState state) {
+        return isBottom(state) ? DoubleBlockCombiner.BlockType.FIRST : DoubleBlockCombiner.BlockType.SECOND;
     }
 
     public static Direction getDirectionTowardsAnotherPart(BlockState state) {
-        return state.get(HALF) == DoubleBlockHalf.LOWER ? Direction.UP : Direction.DOWN;
+        return isBottom(state) ? Direction.UP : Direction.DOWN;
     }
 
-    public static void setOpen(BlockState state, World world, BlockPos pos, boolean open) {
-        // Update this half
-        if (state.get(OPEN) != open) {
-            world.setBlockState(pos, state.with(OPEN, open), 3);
+    @Override
+    //? if >=1.21.2 {
+    /*public BlockState updateShape(BlockState state, LevelReader world, ScheduledTickAccess tickAccess, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, RandomSource random) {
+    *///?} else
+    public BlockState updateShape(BlockState state, Direction direction, BlockState neighborState, LevelAccessor world, BlockPos pos, BlockPos neighborPos) {
+        DoubleBlockHalf doubleBlockHalf = state.getValue(HALF);
+        if (direction.getAxis() == Direction.Axis.Y && (doubleBlockHalf == DoubleBlockHalf.LOWER) == (direction == Direction.UP)) {
+            return neighborState.is(this) && neighborState.getValue(HALF) != doubleBlockHalf ? state.setValue(FACING, neighborState.getValue(FACING)) : Blocks.AIR.defaultBlockState();
         }
-        // Also update the other half — both halves must agree on OPEN so the
-        // upper half's collision shape matches and players can physically enter.
-        Direction toOther = state.get(HALF) == DoubleBlockHalf.LOWER ? Direction.UP : Direction.DOWN;
-        BlockPos otherPos = pos.offset(toOther);
-        BlockState otherState = world.getBlockState(otherPos);
-        if (otherState.isOf(state.getBlock()) && otherState.get(OPEN) != open) {
-            world.setBlockState(otherPos, otherState.with(OPEN, open), 3);
+        if (doubleBlockHalf == DoubleBlockHalf.LOWER && direction == Direction.DOWN && !state.canSurvive(world, pos)) {
+            return Blocks.AIR.defaultBlockState();
+        }
+        //? if >=1.21.2 {
+        /*return super.updateShape(state, world, tickAccess, pos, direction, neighborPos, neighborState, random);
+        *///?} else
+        return super.updateShape(state, direction, neighborState, world, pos, neighborPos);
+    }
+
+    @Override
+    @Nullable
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        Level world = ctx.getLevel();
+        BlockPos blockPos = ctx.getClickedPos();
+        if (blockPos.getY() < /*? if >=1.21.2 {*//*world.getMaxY()*//*?} else {*/world.getMaxBuildHeight() - 1/*?}*/ && world.getBlockState(blockPos.above()).canBeReplaced(ctx)) {
+            return this.defaultBlockState().setValue(FACING, ctx.getHorizontalDirection()).setValue(HALF, DoubleBlockHalf.LOWER);
+        }
+
+        return null;
+    }
+
+    @Override
+    public void setPlacedBy(Level world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
+        world.setBlock(pos.above(), state.setValue(HALF, DoubleBlockHalf.UPPER), Block.UPDATE_ALL);
+    }
+
+    @Override
+    //? if >=1.21.9 {
+    /*public void entityInside(BlockState state, Level world, BlockPos pos, Entity entity, net.minecraft.world.entity.InsideBlockEffectApplier effects, boolean pastEdges) {
+        super.entityInside(state, world, pos, entity, effects, pastEdges);
+    *///?} else if >=1.21.5 {
+    /*public void entityInside(BlockState state, Level world, BlockPos pos, Entity entity, net.minecraft.world.entity.InsideBlockEffectApplier effects) {
+        super.entityInside(state, world, pos, entity, effects);
+    *///?} else {
+    public void entityInside(BlockState state, Level world, BlockPos pos, Entity entity) {
+        super.entityInside(state, world, pos, entity);
+    //?}
+        if (!world.isClientSide() && entity instanceof Player && isBottom(state)) {
+            setOpen(state, world, pos, true);
         }
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+    //? if >=1.20.3 {
+    public BlockState playerWillDestroy(Level world, BlockPos pos, BlockState state, Player player) {
+    //?} else
+    /*public void playerWillDestroy(Level world, BlockPos pos, BlockState state, Player player) {*/
+        boolean bottom = isBottom(state);
+        BlockPos bottomPos = bottom ? pos : pos.below();
+        if (!world.isClientSide() && player.isCreative() && !bottom) {
+            // Same as vanilla doors: in creative, breaking the top half must not drop the bottom half.
+            BlockState blockState = world.getBlockState(bottomPos);
+            if (blockState.getBlock() == state.getBlock() && blockState.getValue(HALF) == DoubleBlockHalf.LOWER) {
+                world.setBlock(bottomPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL | Block.UPDATE_SUPPRESS_DROPS);
+                world.levelEvent(player, LevelEvent.PARTICLES_DESTROY_BLOCK, bottomPos, Block.getId(blockState));
+            }
+        }
+        //? if >=1.20.3 {
+        return super.playerWillDestroy(world, pos, state, player);
+        //?} else
+        /*super.playerWillDestroy(world, pos, state, player);*/
+    }
+
+    // Since 1.21.5 block removal is handled by AbstractShellContainerBlockEntity#preRemoveSideEffects.
+    //? if <1.21.5 {
+    @Override
+    public void onRemove(BlockState state, Level world, BlockPos pos, BlockState newState, boolean moved) {
+        if (!state.is(newState.getBlock()) && isBottom(state) && world.getBlockEntity(pos) instanceof AbstractShellContainerBlockEntity shellContainer) {
+            shellContainer.onBreak(world, pos);
+        }
+        super.onRemove(state, world, pos, newState, moved);
+    }
+    //?}
+
+    /**
+     * Right-click. The wrench cycles the comparator output; everything else
+     * (dye, bed, totem, empty hand, ...) is handed to the block entity.
+     */
+    private static InteractionResult use(ItemStack stack, BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand) {
+        if (ItemUtil.isWrench(stack)) {
+            if (!world.isClientSide()) {
+                world.setBlock(pos, state.cycle(OUTPUT), Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
+                world.updateNeighbourForOutputSignal(pos, state.getBlock());
+            }
+            //? if >=1.21.2 {
+            /*return InteractionResult.SUCCESS;
+            *///?} else
+            return InteractionResult.sidedSuccess(world.isClientSide());
+        }
+
+        AbstractShellContainerBlockEntity shellContainer = getBottomBlockEntity(state, world, pos);
+        if (shellContainer == null) {
+            return InteractionResult.PASS;
+        }
+        return shellContainer.onUse(world, shellContainer.getBlockPos(), player, hand);
+    }
+
+    //? if >=1.21.2 {
+    /*@Override
+    public InteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+        return use(stack, state, world, pos, player, hand);
+    }
+
+    @Override
+    public InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+        return use(ItemStack.EMPTY, state, world, pos, player, InteractionHand.MAIN_HAND);
+    }
+    *///?} else if >=1.20.5 {
+    @Override
+    public ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+        InteractionResult result = use(stack, state, world, pos, player, hand);
+        return switch (result) {
+            case SUCCESS, SUCCESS_NO_ITEM_USED -> ItemInteractionResult.SUCCESS;
+            case CONSUME -> ItemInteractionResult.CONSUME;
+            case CONSUME_PARTIAL -> ItemInteractionResult.CONSUME_PARTIAL;
+            case FAIL -> ItemInteractionResult.FAIL;
+            case PASS -> ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
+        };
+    }
+
+    @Override
+    public InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+        return use(ItemStack.EMPTY, state, world, pos, player, InteractionHand.MAIN_HAND);
+    }
+    //?} else {
+    /*@Override
+    public InteractionResult use(BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+        return use(player.getItemInHand(hand), state, world, pos, player, hand);
+    }
+    *///?}
+
+    @Nullable
+    private static AbstractShellContainerBlockEntity getBottomBlockEntity(BlockState state, Level world, BlockPos pos) {
+        BlockPos bottomPos = isBottom(state) ? pos : pos.below();
+        return world.getBlockEntity(bottomPos) instanceof AbstractShellContainerBlockEntity shellContainer ? shellContainer : null;
+    }
+
+    @Override
+    //? if >=1.20.5 {
+    public boolean isPathfindable(BlockState state, PathComputationType type) {
+    //?} else
+    /*public boolean isPathfindable(BlockState state, BlockGetter world, BlockPos pos, PathComputationType type) {*/
+        return false;
+    }
+
+    @Override
+    public boolean hasAnalogOutputSignal(BlockState state) {
+        return true;
+    }
+
+    @Override
+    //? if >=1.21.9 {
+    /*public int getAnalogOutputSignal(BlockState state, Level world, BlockPos pos, Direction direction) {
+    *///?} else
+    public int getAnalogOutputSignal(BlockState state, Level world, BlockPos pos) {
+        return world.getBlockEntity(pos) instanceof AbstractShellContainerBlockEntity shellContainer
+                ? state.getValue(OUTPUT) == ComparatorOutputType.PROGRESS
+                    ? shellContainer.getProgressComparatorOutput()
+                    : shellContainer.getInventoryComparatorOutput()
+                : 0;
+    }
+
+    @Override
+    public RenderShape getRenderShape(BlockState state) {
+        //? if >=1.21.4 {
+        /*return RenderShape.INVISIBLE;
+        *///?} else
+        return RenderShape.ENTITYBLOCK_ANIMATED;
+    }
+
+    @Override
+    public BlockState rotate(BlockState state, Rotation rotation) {
+        return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
+    }
+
+    @Override
+    public BlockState mirror(BlockState state, Mirror mirror) {
+        return state.rotate(mirror.getRotation(state.getValue(FACING)));
+    }
+
+    @Override
+    public long getSeed(BlockState state, BlockPos pos) {
+        return Mth.getSeed(pos.getX(), pos.below(state.getValue(HALF) == DoubleBlockHalf.LOWER ? 0 : 1).getY(), pos.getZ());
+    }
+
+    @Override
+    public void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(HALF, FACING, OPEN, OUTPUT);
     }
 
     @Override
-    public BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.ENTITYBLOCK_ANIMATED;
-    }
-
-    @Override
-    public BlockState rotate(BlockState state, BlockRotation rotation) {
-        return state.with(FACING, rotation.rotate(state.get(FACING)));
-    }
-
-    @Override
-    public BlockState mirror(BlockState state, BlockMirror mirror) {
-        return state.rotate(mirror.getRotation(state.get(FACING)));
-    }
-
-    // ── Proper 2-block placement ──────────────────────────────────────────────
-
-    @Override
     @Nullable
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        BlockPos pos   = ctx.getBlockPos();
-        World    world = ctx.getWorld();
-
-        if (pos.getY() >= world.getTopY() - 1)              return null;
-        if (!world.getBlockState(pos.up()).canReplace(ctx))  return null;
-
-        Direction facing = ctx.getHorizontalPlayerFacing().getOpposite();
-        return this.getDefaultState()
-                .with(FACING, facing)
-                .with(HALF,   DoubleBlockHalf.LOWER);
-    }
-
-    @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state,
-                         @Nullable LivingEntity placer, ItemStack itemStack) {
-        world.setBlockState(pos.up(), state.with(HALF, DoubleBlockHalf.UPPER), 3);
-    }
-
-    @Override
-    protected BlockState getStateForNeighborUpdate(BlockState state, Direction direction,
-                                                   BlockState neighborState, WorldAccess world,
-                                                   BlockPos pos, BlockPos neighborPos) {
-        DoubleBlockHalf half = state.get(HALF);
-        if (direction.getAxis() != Direction.Axis.Y
-                || (half == DoubleBlockHalf.LOWER) != (direction == Direction.UP)
-                || (neighborState.isOf(this) && neighborState.get(HALF) != half)) {
-            return half == DoubleBlockHalf.LOWER && direction == Direction.DOWN
-                    && !state.canPlaceAt(world, pos)
-                    ? Blocks.AIR.getDefaultState()
-                    : super.getStateForNeighborUpdate(state, direction, neighborState,
-                    world, pos, neighborPos);
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+        if (!isBottom(state)) {
+            return null;
         }
-        return Blocks.AIR.getDefaultState();
+        return world.isClientSide() ? TickableBlockEntity::clientTicker : TickableBlockEntity::serverTicker;
     }
 
-    // ── FIX #1 & #2: onBreak must return BlockState in MC 1.21 ───────────────
-    /**
-     * In Minecraft 1.21 the signature changed from:
-     *   void onBreak(World, BlockPos, BlockState, PlayerEntity)
-     * to:
-     *   BlockState onBreak(World, BlockPos, BlockState, PlayerEntity)
-     *
-     * We must return the (possibly modified) BlockState.
-     * We also break the other half of the two-block structure here.
-     */
     @Override
-    public BlockState onBreak(World world, BlockPos pos, BlockState state,
-                              PlayerEntity player) {
-        if (!world.isClient) {
-            BlockPos otherPos = (state.get(HALF) == DoubleBlockHalf.LOWER)
-                    ? pos.up() : pos.down();
-            BlockState otherState = world.getBlockState(otherPos);
-
-            if (otherState.isOf(this) && otherState.get(HALF) != state.get(HALF)) {
-                // Notify the block entity before removing the other half
-                if (world.getBlockEntity(pos) instanceof AbstractShellContainerBlockEntity be) {
-                    be.onBreak(world, pos);
-                }
-                world.setBlockState(otherPos, Blocks.AIR.getDefaultState(),
-                        Block.NOTIFY_ALL | Block.SKIP_DROPS);
-            }
+    public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
+        boolean isBottom = isBottom(state);
+        if (!isOpen(state)) {
+            return isBottom ? SOLID_SHAPE_BOTTOM : SOLID_SHAPE_TOP;
         }
-        // MUST call super and return its result — it handles drops, stats, etc.
-        return super.onBreak(world, pos, state, player);
-    }
 
-    // ── FIX #3: Hand comes from the method parameter, NOT from BlockHitResult ─
-    /**
-     * BlockHitResult does NOT have a getHand() method.
-     * The Hand is passed as a separate parameter in onUse().
-     */
-    @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos,
-                                 PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient) return ActionResult.SUCCESS;
-
-        // Always delegate to the LOWER half's block entity
-        BlockPos bePos = (state.get(HALF) == DoubleBlockHalf.LOWER) ? pos : pos.down();
-
-        if (world.getBlockEntity(bePos) instanceof AbstractShellContainerBlockEntity be) {
-            // Pass Hand.MAIN_HAND as the interaction hand — if your
-            // AbstractShellContainerBlockEntity.onUse() needs the actual hand,
-            // add Hand as a parameter to that method instead.
-            return be.onUse(world, bePos, player, Hand.MAIN_HAND);
-        }
-        return ActionResult.PASS;
-    }
-
-    // ── FIX #4: Ticker — avoid wildcard capture problem
-    /**
-     * createTickerHelper() cannot infer types when getExpectedBlockEntityType()
-     * returns BlockEntityType<?>. The solution is to use a generic helper method
-     * that captures the wildcard properly, avoiding the raw-type inference failure.
-     */
-    // ── Ticker
-    /**
-     * We bypass createTickerHelper() entirely because it cannot resolve the
-     * wildcard capture from getExpectedBlockEntityType() returning BlockEntityType<?>.
-     * Instead we do the type equality check manually and suppress the unchecked
-     * cast — it is safe because we verify the type matches before casting.
-     */
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
-            World world, BlockState state, BlockEntityType<T> type) {
-
-        // Only the LOWER half owns a BlockEntity — skip the upper half entirely
-        if (state.get(HALF) != DoubleBlockHalf.LOWER) return null;
-
-        // If the provided type doesn't match what we expect, return null (vanilla contract)
-        if (type != getExpectedBlockEntityType()) return null;
-
-        // Safe unchecked cast: we just confirmed type == getExpectedBlockEntityType()
-        return (BlockEntityTicker<T>) (BlockEntityTicker<?>) (w, p, s, be) -> {
-            if (be instanceof TickableBlockEntity tbe) {
-                if (w.isClient) tbe.onClientTick(w, p, s);
-                else            tbe.onServerTick(w, p, s);
-            }
+        Direction direction = state.getValue(FACING);
+        return switch (direction) {
+            case NORTH -> isBottom ? NORTH_SHAPE_BOTTOM : NORTH_SHAPE_TOP;
+            case SOUTH -> isBottom ? SOUTH_SHAPE_BOTTOM : SOUTH_SHAPE_TOP;
+            case EAST -> isBottom ? EAST_SHAPE_BOTTOM : EAST_SHAPE_TOP;
+            case WEST -> isBottom ? WEST_SHAPE_BOTTOM : WEST_SHAPE_TOP;
+            default -> throw new IllegalArgumentException();
         };
     }
 
-    /** Subclasses return their specific BlockEntityType so getTicker() can match it. */
-    protected abstract BlockEntityType<?> getExpectedBlockEntityType();
+    static {
+        final VoxelShape ROOF = Block.box(0, 15, 0, 16, 16, 16);
+        final VoxelShape FLOOR = Block.box(0, 0, 0, 16, 1, 16);
+        final VoxelShape NORTH_WALL = Block.box(0, 0, 0, 16, 16, 1);
+        final VoxelShape SOUTH_WALL = Block.box(0, 0, 15, 16, 16, 16);
+        final VoxelShape EAST_WALL = Block.box(15, 0, 0, 16, 16, 16);
+        final VoxelShape WEST_WALL = Block.box(0, 0, 0, 1, 16, 16);
+
+        final VoxelShape NORTH_SHAPE = Shapes.or(NORTH_WALL, EAST_WALL, WEST_WALL).optimize();
+        final VoxelShape SOUTH_SHAPE = Shapes.or(SOUTH_WALL, EAST_WALL, WEST_WALL).optimize();
+        final VoxelShape EAST_SHAPE = Shapes.or(NORTH_WALL, SOUTH_WALL, EAST_WALL).optimize();
+        final VoxelShape WEST_SHAPE = Shapes.or(NORTH_WALL, SOUTH_WALL, WEST_WALL).optimize();
+
+        SOLID_SHAPE_TOP = Shapes.or(NORTH_WALL, SOUTH_WALL, EAST_WALL, WEST_WALL, ROOF).optimize();
+        SOLID_SHAPE_BOTTOM = Shapes.or(NORTH_WALL, SOUTH_WALL, EAST_WALL, WEST_WALL, FLOOR).optimize();
+
+        NORTH_SHAPE_TOP = Shapes.or(NORTH_SHAPE, ROOF).optimize();
+        NORTH_SHAPE_BOTTOM = Shapes.or(NORTH_SHAPE, FLOOR).optimize();
+        SOUTH_SHAPE_TOP = Shapes.or(SOUTH_SHAPE, ROOF).optimize();
+        SOUTH_SHAPE_BOTTOM = Shapes.or(SOUTH_SHAPE, FLOOR).optimize();
+        EAST_SHAPE_TOP = Shapes.or(EAST_SHAPE, ROOF).optimize();
+        EAST_SHAPE_BOTTOM = Shapes.or(EAST_SHAPE, FLOOR).optimize();
+        WEST_SHAPE_TOP = Shapes.or(WEST_SHAPE, ROOF).optimize();
+        WEST_SHAPE_BOTTOM = Shapes.or(WEST_SHAPE, FLOOR).optimize();
+    }
 }

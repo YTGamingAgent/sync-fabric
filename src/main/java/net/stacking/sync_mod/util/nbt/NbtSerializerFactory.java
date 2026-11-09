@@ -1,9 +1,8 @@
 package net.stacking.sync_mod.util.nbt;
 
 import com.google.common.collect.ImmutableList;
-import net.minecraft.nbt.NbtCompound;
-
 import java.util.function.BiConsumer;
+import net.minecraft.nbt.CompoundTag;
 
 public class NbtSerializerFactory<T> {
     private final Iterable<NbtReader<T>> readers;
@@ -21,10 +20,10 @@ public class NbtSerializerFactory<T> {
     }
 
     @FunctionalInterface
-    public interface NbtWriter<T> extends BiConsumer<T, NbtCompound> {
+    public interface NbtWriter<T> extends BiConsumer<T, CompoundTag> {
     }
 
     @FunctionalInterface
-    public interface NbtReader<T> extends BiConsumer<T, NbtCompound> {
+    public interface NbtReader<T> extends BiConsumer<T, CompoundTag> {
     }
 }

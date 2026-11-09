@@ -2,58 +2,38 @@ package net.stacking.sync_mod.client.render;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderPhase;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Util;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
+import net.stacking.sync_mod.Sync;
+import net.stacking.sync_mod.client.texture.GeneratedTextureManager;
+import net.stacking.sync_mod.client.texture.TextureGenerators;
 
-import java.util.function.BiFunction;
-
+/**
+ * Render layers for shells under construction. They only use vanilla shaders, so they work
+ * the same on every Minecraft version and with shader packs.
+ */
 @Environment(EnvType.CLIENT)
-public final class CustomRenderLayer extends RenderLayer {
-    public static final RenderLayer SHELL;
-    private static final RenderLayer VOXELS;
-    private static final BiFunction<Identifier, Boolean, RenderLayer> ENTITY_TRANSLUCENT_PARTIALLY_TEXTURED;
+public final class CustomRenderLayer {
+    private static final ResourceLocation WHITE = Sync.locate("textures/misc/white.png");
 
-    private CustomRenderLayer(String name, VertexFormat vertexFormat, VertexFormat.DrawMode drawMode, int expectedBufferSize, boolean hasCrumbling, boolean translucent, Runnable startAction, Runnable endAction) {
-        super(name, vertexFormat, drawMode, expectedBufferSize, hasCrumbling, translucent, startAction, endAction);
+    /**
+     * Untextured white voxels, used while a shell is being printed.
+     */
+    public static RenderType getVoxels() {
+        return RenderType.entitySolid(WHITE);
     }
 
-    public static RenderLayer getVoxels() {
-        return VOXELS;
+    /**
+     * White over the part of the skin that hasn't been painted yet; drawn on top of the
+     * shell's skin while it's being painted.
+     *
+     * @param paintingProgress 0 (nothing painted) to 1 (fully painted).
+     */
+    public static RenderType getPaintingMask(float paintingProgress) {
+        ResourceLocation[] masks = GeneratedTextureManager.getTextures(TextureGenerators.PlayerEntityPartiallyTexturedTextureGenerator);
+        int index = Math.max(0, Math.min((int)(masks.length * paintingProgress), masks.length - 1));
+        return RenderType.entityTranslucent(masks[index]);
     }
 
-    public static RenderLayer getEntityTranslucentPartiallyTextured(Identifier textureId, float cutoutY) {
-        return getEntityTranslucentPartiallyTextured(textureId, cutoutY, true);
-    }
-
-    public static RenderLayer getEntityTranslucentPartiallyTextured(Identifier textureId, float cutoutY, boolean affectsOutline) {
-        CustomGameRenderer.initRenderTypeEntityTranslucentPartiallyTexturedShader(cutoutY, MatrixStackStorage.getModelMatrixStack().peek().getPositionMatrix());
-        return ENTITY_TRANSLUCENT_PARTIALLY_TEXTURED.apply(textureId, affectsOutline);
-    }
-
-    static {
-        // SHELL render layer
-        SHELL = RenderLayer.getEntityTranslucent(Identifier.ofVanilla("textures/entity/player/wide/steve.png"));
-
-        // VOXELS render layer - using vanilla solid rendering
-        VOXELS = of("voxels",
-                CustomVertexFormats.POSITION_COLOR_OVERLAY_LIGHT_NORMAL,
-                VertexFormat.DrawMode.QUADS,
-                256,
-                false,
-                false,
-                RenderLayer.MultiPhaseParameters.builder()
-                        .program(RenderPhase.SOLID_PROGRAM)
-                        .transparency(NO_TRANSPARENCY)
-                        .cull(DISABLE_CULLING)
-                        .lightmap(ENABLE_LIGHTMAP)
-                        .overlay(ENABLE_OVERLAY_COLOR)
-                        .build(true));
-
-        // Entity translucent partially textured - fallback to vanilla
-        ENTITY_TRANSLUCENT_PARTIALLY_TEXTURED = Util.memoize((id, outline) ->
-                RenderLayer.getEntityTranslucent(id, outline));
-    }
+    private CustomRenderLayer() { }
 }

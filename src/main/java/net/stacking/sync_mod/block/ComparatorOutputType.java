@@ -1,8 +1,8 @@
 package net.stacking.sync_mod.block;
 
-import net.minecraft.util.StringIdentifiable;
+import net.minecraft.util.StringRepresentable;
 
-public enum ComparatorOutputType implements StringIdentifiable {
+public enum ComparatorOutputType implements StringRepresentable {
 
     PROGRESS("progress"),
     INVENTORY("inventory");
@@ -15,7 +15,7 @@ public enum ComparatorOutputType implements StringIdentifiable {
 
     /** Used by Minecraft's EnumProperty serialization (state NBT, commands, etc.) */
     @Override
-    public String asString() {
+    public String getSerializedName() {
         return this.name;
     }
 

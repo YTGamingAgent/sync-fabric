@@ -1,6 +1,5 @@
 package net.stacking.sync_mod.api.shell;
 
-import net.minecraft.util.Pair;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 
@@ -8,6 +7,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.stream.Stream;
+import net.stacking.sync_mod.util.Tuple;
 
 /**
  * An interface that represents a replicable life form.
@@ -92,7 +92,7 @@ public interface Shell extends ShellStateManager {
     }
 
     @Override
-    default Collection<Pair<ShellStateUpdateType, ShellState>> peekPendingUpdates(UUID owner) {
+    default Collection<Tuple<ShellStateUpdateType, ShellState>> peekPendingUpdates(UUID owner) {
         return Collections.emptyList();
     }
 

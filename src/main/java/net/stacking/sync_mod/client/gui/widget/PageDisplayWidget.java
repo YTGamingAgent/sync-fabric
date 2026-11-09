@@ -1,15 +1,13 @@
 package net.stacking.sync_mod.client.gui.widget;
 
+import net.minecraft.client.gui.Font;
+import net.stacking.sync_mod.client.gui.GuiContext;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.DyeColor;
 import net.stacking.sync_mod.util.client.render.ColorUtil;
 import net.stacking.sync_mod.util.client.render.RenderSystemUtil;
 import net.stacking.sync_mod.util.math.Radians;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.MathHelper;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,32 +31,32 @@ public class PageDisplayWidget<TKey, UData> extends AbstractWidget {
     private final float[] backgroundColor;
     private final Map<TKey, List<UData>> data;
     private final List<TKey> keys;
-    private final Function<TKey, Text> keyTransformer;
+    private final Function<TKey, Component> keyTransformer;
     private final int entriesPerPage;
     private final BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange;
 
     private int selectedKeyIndex;
     private int selectedPageIndex;
-    private Text selectedKeyAsText;
+    private Component selectedKeyAsText;
     private int selectedSectionPageCount;
 
-    public PageDisplayWidget(float cX, float cY, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Text> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
+    public PageDisplayWidget(float cX, float cY, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Component> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
         this(cX, cY, DEFAULT_SCALE, DEFAULT_STEP, DEFAULT_TEXT_COLOR, DEFAULT_BACKGROUND_COLOR, data, keySelector, keyTransformer, defaultKey, entriesPerPage, onSelectionChange);
     }
 
-    public PageDisplayWidget(float cX, float cY, float scale, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Text> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
+    public PageDisplayWidget(float cX, float cY, float scale, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Component> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
         this(cX, cY, scale, DEFAULT_STEP, DEFAULT_TEXT_COLOR, DEFAULT_BACKGROUND_COLOR, data, keySelector, keyTransformer, defaultKey, entriesPerPage, onSelectionChange);
     }
 
-    public PageDisplayWidget(float cX, float cY, int textColor, int backgroundColor, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Text> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
+    public PageDisplayWidget(float cX, float cY, int textColor, int backgroundColor, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Component> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
         this(cX, cY, DEFAULT_SCALE, DEFAULT_STEP, textColor, backgroundColor, data, keySelector, keyTransformer, defaultKey, entriesPerPage, onSelectionChange);
     }
 
-    public PageDisplayWidget(float cX, float cY, float scale, int textColor, int backgroundColor, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Text> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
+    public PageDisplayWidget(float cX, float cY, float scale, int textColor, int backgroundColor, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Component> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
         this(cX, cY, scale, DEFAULT_STEP, textColor, backgroundColor, data, keySelector, keyTransformer, defaultKey, entriesPerPage, onSelectionChange);
     }
 
-    public PageDisplayWidget(float cX, float cY, float scale, float step, int textColor, int backgroundColor, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Text> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
+    public PageDisplayWidget(float cX, float cY, float scale, float step, int textColor, int backgroundColor, Stream<UData> data, Function<UData, TKey> keySelector, Function<TKey, Component> keyTransformer, TKey defaultKey, int entriesPerPage, BiConsumer<PageDisplayWidget<TKey, UData>, Page> onSelectionChange) {
         this.cX = cX;
         this.cY = cY;
         this.scale = scale;
@@ -81,10 +79,10 @@ public class PageDisplayWidget<TKey, UData> extends AbstractWidget {
     }
 
     public void select(int section, int page) {
-        section = MathHelper.clamp((section + this.keys.size()) % this.keys.size(), 0, this.keys.size() - 1);
+        section = Mth.clamp((section + this.keys.size()) % this.keys.size(), 0, this.keys.size() - 1);
         TKey key = this.keys.get(section);
         int pages = Math.max(1, (int)Math.ceil(this.data.get(key).size() / (double)this.entriesPerPage));
-        page = MathHelper.clamp((page + pages) % pages, 0, pages - 1);
+        page = Mth.clamp((page + pages) % pages, 0, pages - 1);
 
         List<UData> content = this.data.get(key).stream().skip((long)this.entriesPerPage * page).limit(this.entriesPerPage).collect(Collectors.toList());
         this.selectedKeyIndex = section;
@@ -130,7 +128,7 @@ public class PageDisplayWidget<TKey, UData> extends AbstractWidget {
     }
 
     @Override
-    protected void renderContent(DrawContext drawContext, int mouseX, int mouseY, float delta) {
+    protected void renderContent(GuiContext drawContext, int mouseX, int mouseY, float delta) {
         if (this.hasMorePages()) {
             this.renderTitleAndPagination(drawContext);
         } else {
@@ -138,36 +136,38 @@ public class PageDisplayWidget<TKey, UData> extends AbstractWidget {
         }
     }
 
-    private void renderTitle(DrawContext drawContext) {
+    private void renderTitle(GuiContext drawContext) {
         RenderSystemUtil.drawCenteredText(drawContext, this.selectedKeyAsText, this.cX, this.cY, this.scale, this.textColor, true);
     }
 
-    private void renderTitleAndPagination(DrawContext drawContext) {
+    private void renderTitleAndPagination(GuiContext drawContext) {
         String paginationText = String.format("%s / %s", this.selectedPageIndex + 1, this.selectedSectionPageCount);
-        TextRenderer textRenderer = RenderSystemUtil.getTextRenderer();
+        Font textRenderer = RenderSystemUtil.getTextRenderer();
         float paginationTextScale = 0.5F;
-        float titleHeight = textRenderer.fontHeight * this.scale;
+        float titleHeight = textRenderer.lineHeight * this.scale;
         float spacing = titleHeight * 5F / 6F;
-        float paginationTextWidth = textRenderer.getWidth(paginationText) * this.scale * paginationTextScale;
+        float paginationTextWidth = textRenderer.width(paginationText) * this.scale * paginationTextScale;
         float paginationBoxWidth = Math.max(titleHeight * 2F, paginationTextWidth);
         float height = 2 * titleHeight + spacing;
 
         float top = this.cY - height / 2F;
         float boxTop = top + titleHeight + spacing - titleHeight * paginationTextScale * 0.125F;
         float boxLeft = this.cX - paginationBoxWidth / 2F;
-        RenderSystemUtil.drawRectangle(drawContext.getMatrices(), boxLeft, boxTop, paginationBoxWidth / this.scale, titleHeight / this.scale, titleHeight * 0.25F / this.scale, this.scale, 0, this.step, backgroundColor[0], backgroundColor[1], backgroundColor[2], backgroundColor[3]);
+        RenderSystemUtil.drawRectangle(drawContext, boxLeft, boxTop, paginationBoxWidth / this.scale, titleHeight / this.scale, titleHeight * 0.25F / this.scale, this.scale, 0, this.step, backgroundColor[0], backgroundColor[1], backgroundColor[2], backgroundColor[3]);
 
         RenderSystemUtil.drawCenteredText(drawContext, this.selectedKeyAsText, this.cX, top + titleHeight, this.scale, this.textColor, true);
-        RenderSystemUtil.drawCenteredText(drawContext, Text.of(paginationText), this.cX, top + 1.5F * titleHeight + spacing, this.scale * paginationTextScale, this.textColor, false);
+        RenderSystemUtil.drawCenteredText(drawContext, Component.nullToEmpty(paginationText), this.cX, top + 1.5F * titleHeight + spacing, this.scale * paginationTextScale, this.textColor, false);
     }
 
     private boolean focused;
 
+    //? if >=1.19.4
     @Override
     public void setFocused(boolean focused) {
         this.focused = focused;
     }
 
+    //? if >=1.19.4
     @Override
     public boolean isFocused() {
         return focused;

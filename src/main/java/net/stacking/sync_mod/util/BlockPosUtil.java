@@ -1,31 +1,30 @@
 package net.stacking.sync_mod.util;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.EntityView;
-
 import java.util.Optional;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.EntityGetter;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.phys.Vec3;
 
 public final class BlockPosUtil {
-    public static Optional<Direction> getHorizontalFacing(BlockPos pos, BlockView blockView) {
+    public static Optional<Direction> getHorizontalFacing(BlockPos pos, BlockGetter blockView) {
         BlockState state = blockView.getBlockState(pos);
-        if (state.contains(Properties.HORIZONTAL_FACING)) {
-            return Optional.of(state.get(Properties.HORIZONTAL_FACING));
+        if (state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+            return Optional.of(state.getValue(BlockStateProperties.HORIZONTAL_FACING));
         }
         return Optional.empty();
     }
 
-    public static boolean hasPlayerInside(BlockPos pos, EntityView world) {
+    public static boolean hasPlayerInside(BlockPos pos, EntityGetter world) {
         double x = pos.getX() + 0.5;
         double y = pos.getY() + 0.5;
         double z = pos.getZ() + 0.5;
-        return world.getClosestPlayer(x, y, z, 1, false) != null;
+        return world.getNearestPlayer(x, y, z, 1, false) != null;
     }
 
     public static boolean isEntityInside(Entity entity, BlockPos pos) {
@@ -37,28 +36,30 @@ public final class BlockPosUtil {
 
     public static void moveEntity(Entity entity, BlockPos target, Direction facing, boolean inside) {
         Direction targetDirection = facing.getOpposite();
-        Vec3d currentPos = entity.getPos();
+        Vec3 currentPos = entity.position();
         double targetX = target.getX() + 0.5;
         double targetZ = target.getZ() + 0.5;
         if (!inside) {
-            targetX += targetDirection.getOffsetX();
-            targetZ += targetDirection.getOffsetZ();
+            targetX += targetDirection.getStepX();
+            targetZ += targetDirection.getStepZ();
         }
         double currentX = currentPos.x;
         double currentZ = currentPos.z;
         final double MAX_SPEED = 0.33;
         double velocityX = getMinVelocity(targetX - currentX, MAX_SPEED);
         double velocityZ = getMinVelocity(targetZ - currentZ, MAX_SPEED);
-        float yaw = facing.asRotation(); // ← CHANGED: was targetDirection.asRotation() — now faces glass doors ✅
-        entity.setVelocity(velocityX, 0, velocityZ);
-        entity.setPitch(0);
-        entity.setYaw(yaw);
-        entity.setHeadYaw(yaw);
-        entity.setBodyYaw(yaw);
-        entity.prevYaw = yaw;
+        // Face out through the doors (FACING points into the machine).
+        float yaw = targetDirection.toYRot();
+
+        entity.setDeltaMovement(velocityX, 0, velocityZ);
+        entity.setXRot(0);
+        entity.setYRot(yaw);
+        entity.setYHeadRot(yaw);
+        entity.setYBodyRot(yaw);
+        entity.yRotO = yaw;
         if (entity instanceof LivingEntity livingEntity) {
-            livingEntity.prevBodyYaw = yaw;
-            livingEntity.prevHeadYaw = yaw;
+            livingEntity.yBodyRotO = yaw;
+            livingEntity.yHeadRotO = yaw;
         }
     }
 

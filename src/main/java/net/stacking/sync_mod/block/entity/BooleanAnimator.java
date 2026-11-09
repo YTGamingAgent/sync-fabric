@@ -1,6 +1,6 @@
 package net.stacking.sync_mod.block.entity;
 
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.Mth;
 
 public class BooleanAnimator {
     private boolean value;
@@ -22,7 +22,7 @@ public class BooleanAnimator {
     }
 
     public float getProgress(float delta) {
-        return MathHelper.lerp(delta, this.lastProgress, this.progress);
+        return Mth.lerp(delta, this.lastProgress, this.progress);
     }
 
     public void step() {

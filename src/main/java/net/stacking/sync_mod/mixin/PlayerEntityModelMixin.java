@@ -5,8 +5,8 @@ import net.stacking.sync_mod.util.client.render.ModelUtil;
 import net.stacking.sync_mod.util.math.Voxel;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.entity.model.PlayerEntityModel;
+import net.minecraft.client.model.PlayerModel;
+import net.minecraft.client.model.geom.ModelPart;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -14,42 +14,45 @@ import org.spongepowered.asm.mixin.Shadow;
 import java.util.stream.Stream;
 
 @Environment(EnvType.CLIENT)
-@Mixin(PlayerEntityModel.class)
+@Mixin(PlayerModel.class)
 abstract class PlayerEntityModelMixin implements VoxelProvider {
     @Final
     @Shadow
-    private boolean thinArms;
+    private boolean slim;
 
     @Override
     @SuppressWarnings("ConstantConditions")
     public Stream<Voxel> getVoxels() {
-        PlayerEntityModel<?> model = (PlayerEntityModel<?>)(Object)this;
+        //? if >=1.21.2 {
+        /*PlayerModel model = (PlayerModel)(Object)this;
+        *///?} else
+        PlayerModel<?> model = (PlayerModel<?>)(Object)this;
 
         float cX = -2;
         float cY = 0;
         float cZ = -2;
 
         ModelPart head = ModelUtil.copy(model.head);
-        head.setPivot(cX - 2, cY - 8, cZ - 2);
+        head.setPos(cX - 2, cY - 8, cZ - 2);
 
         ModelPart body = ModelUtil.copy(model.body);
-        body.setPivot(cX - 2, cY, cZ);
+        body.setPos(cX - 2, cY, cZ);
 
         ModelPart leftArm = ModelUtil.copy(model.leftArm);
         ModelPart rightArm = ModelUtil.copy(model.rightArm);
-        if (this.thinArms) {
-            leftArm.setPivot(cX + 6, cY + 0.5F, cZ);
-            rightArm.setPivot(cX - 5, cY + 0.5F, cZ);
+        if (this.slim) {
+            leftArm.setPos(cX + 6, cY + 0.5F, cZ);
+            rightArm.setPos(cX - 5, cY + 0.5F, cZ);
         } else {
-            leftArm.setPivot(cX + 6, cY, cZ);
-            rightArm.setPivot(cX - 6, cY, cZ);
+            leftArm.setPos(cX + 6, cY, cZ);
+            rightArm.setPos(cX - 6, cY, cZ);
         }
 
         ModelPart leftLeg = ModelUtil.copy(model.leftLeg);
-        leftLeg.setPivot(cX + 1.9F, cY + 12, cZ);
+        leftLeg.setPos(cX + 1.9F, cY + 12, cZ);
 
         ModelPart rightLeg = ModelUtil.copy(model.rightLeg);
-        rightLeg.setPivot(cX - 1.9F, cY + 12, cZ);
+        rightLeg.setPos(cX - 1.9F, cY + 12, cZ);
 
         return Stream.of(leftLeg, rightLeg, leftArm, rightArm, body, head).flatMap(ModelUtil::asVoxels);
     }

@@ -2,7 +2,7 @@ package net.stacking.sync_mod.util.client.render;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.util.DyeColor;
+import net.minecraft.world.item.DyeColor;
 
 @Environment(EnvType.CLIENT)
 public final class ColorUtil {
@@ -11,7 +11,7 @@ public final class ColorUtil {
     }
 
     public static int getRgb(DyeColor color, int alpha) {
-        int rgb = color.getSignColor();
+        int rgb = color.getTextColor();
         int r = (rgb >> 16) & 0xFF;
         int g = (rgb >> 8) & 0xFF;
         int b = rgb & 0xFF;
@@ -39,7 +39,7 @@ public final class ColorUtil {
     }
 
     public static int[] getRgba(DyeColor color, int alpha) {
-        int rgb = color.getSignColor();
+        int rgb = color.getTextColor();
         return new int[] {
                 (rgb >> 16) & 0xFF,
                 (rgb >> 8) & 0xFF,
@@ -53,7 +53,7 @@ public final class ColorUtil {
     }
 
     public static float[] getRgbaFloat(DyeColor color, float alpha) {
-        int rgb = color.getSignColor();
+        int rgb = color.getTextColor();
         return new float[] {
                 ((rgb >> 16) & 0xFF) / 255.0F,
                 ((rgb >> 8) & 0xFF) / 255.0F,

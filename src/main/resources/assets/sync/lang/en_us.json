@@ -46,9 +46,6 @@
   "text.autoconfig.sync.option.hardcoreFingerstickDamage.@Tooltip[0]": "The amount of damage that a shell constructor will deal to a player",
   "text.autoconfig.sync.option.hardcoreFingerstickDamage.@Tooltip[1]": "in the Hardcore mode when they try to create a new shell",
   "text.autoconfig.sync.category.energy": "Energy",
-  "text.autoconfig.sync.option.shellConstructorCapacity": "Shell constructor capacity",
-  "text.autoconfig.sync.option.shellConstructorCapacity.@Tooltip[0]": "The amount of energy required",
-  "text.autoconfig.sync.option.shellConstructorCapacity.@Tooltip[1]": "to construct a new shell",
   "text.autoconfig.sync.option.shellStorageCapacity": "Shell storage capacity",
   "text.autoconfig.sync.option.shellStorageCapacity.@Tooltip[0]": "Determines capacity of a",
   "text.autoconfig.sync.option.shellStorageCapacity.@Tooltip[1]": "shell storage's inner battery",
@@ -61,12 +58,6 @@
   "text.autoconfig.sync.option.shellStorageMaxUnpoweredLifespan": "Lifespan of an unpowered shell",
   "text.autoconfig.sync.option.shellStorageMaxUnpoweredLifespan.@Tooltip[0]": "Determines how many ticks a shell can survive without",
   "text.autoconfig.sync.option.shellStorageMaxUnpoweredLifespan.@Tooltip[1]": "a power supply connected to the corresponding shell storage",
-  "text.autoconfig.sync.option.energyMap": "The amount of energy a treadmill can produce per tick",
-  "text.autoconfig.sync.option.energyMap.@Tooltip[0]": "Specifies a list of entities that can",
-  "text.autoconfig.sync.option.energyMap.@Tooltip[1]": "produce energy via treadmills",
-  "text.autoconfig.sync.option.EnergyMapEntry": "The amount of energy an entity can produce per tick",
-  "text.autoconfig.sync.option.EnergyMapEntry.entityId": "Entity id",
-  "text.autoconfig.sync.option.EnergyMapEntry.outputEnergyQuantity": "The amount of energy produced per tick",
   "text.autoconfig.sync.category.sync": "Sync",
   "text.autoconfig.sync.option.preserveOrigins": "Preserve origins",
   "text.autoconfig.sync.option.preserveOrigins.@Tooltip": "If this option is enabled, all user shells will share the same origins",
@@ -90,6 +81,12 @@
   "text.autoconfig.sync.option.easterEggs.technoblade.allowAnnouncements": "Allow announcements",
   "text.autoconfig.sync.option.easterEggs.technoblade.allowQuotes": "Allow quotes",
   "text.autoconfig.sync.option.easterEggs.technoblade.quoteDelay": "Quote delay",
+
+  "message.sync.shell_constructor.cancelled": "Shell construction cancelled",
+  "message.sync.shell_storage.primary.set": "This Shell Storage is now your primary storage",
+  "message.sync.shell_storage.primary.already": "This is already your primary Shell Storage",
+  "message.sync.shell_storage.primary.taken": "This Shell Storage is already someone else's primary storage",
+  "message.sync.shell_storage.primary.unpowered": "Shell Storage must be powered to become your primary storage",
 
   "modmenu.descriptionTranslation.sync": "One mind. Many bodies."
 }

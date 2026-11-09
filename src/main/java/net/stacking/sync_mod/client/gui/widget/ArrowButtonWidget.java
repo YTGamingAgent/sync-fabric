@@ -1,29 +1,32 @@
 package net.stacking.sync_mod.client.gui.widget;
 
+import net.stacking.sync_mod.util.client.render.PoseUtil;
+
 import net.stacking.sync_mod.util.client.render.ColorUtil;
 import net.stacking.sync_mod.util.client.render.RenderSystemUtil;
 import net.stacking.sync_mod.util.math.QuarticFunction;
 import net.stacking.sync_mod.util.math.Radians;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
+//? if >=1.20
+import net.minecraft.client.gui.GuiGraphics;
+import net.stacking.sync_mod.client.gui.GuiContext;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.DyeColor;
 
 @Environment(EnvType.CLIENT)
-public class ArrowButtonWidget extends ButtonWidget {
-    private static final Text DEFAULT_DESCRIPTION = null;
+public class ArrowButtonWidget extends Button {
+    private static final Component DEFAULT_DESCRIPTION = null;
     private static final int DEFAULT_COLOR = ColorUtil.fromDyeColor(DyeColor.WHITE);
     private static final float DEFAULT_STEP = Radians.R_PI_32;
 
     public final ArrowType type;
     private final float step;
     private final float[] color;
-    private final Text description;
+    private final Component description;
     private final float x0;
     private final float y0;
     private final float x1;
@@ -37,7 +40,7 @@ public class ArrowButtonWidget extends ButtonWidget {
         this(x, y, width, height, type, thickness, DEFAULT_STEP, DEFAULT_COLOR, DEFAULT_DESCRIPTION, onClick);
     }
 
-    public ArrowButtonWidget(float x, float y, float width, float height, ArrowType type, float thickness, Text description, Runnable onClick) {
+    public ArrowButtonWidget(float x, float y, float width, float height, ArrowType type, float thickness, Component description, Runnable onClick) {
         this(x, y, width, height, type, thickness, DEFAULT_STEP, DEFAULT_COLOR, description, onClick);
     }
 
@@ -45,12 +48,12 @@ public class ArrowButtonWidget extends ButtonWidget {
         this(x, y, width, height, type, thickness, DEFAULT_STEP, color, DEFAULT_DESCRIPTION, onClick);
     }
 
-    public ArrowButtonWidget(float x, float y, float width, float height, ArrowType type, float thickness, int color, Text description, Runnable onClick) {
+    public ArrowButtonWidget(float x, float y, float width, float height, ArrowType type, float thickness, int color, Component description, Runnable onClick) {
         this(x, y, width, height, type, thickness, DEFAULT_STEP, color, description, onClick);
     }
 
-    public ArrowButtonWidget(float x, float y, float width, float height, ArrowType type, float thickness, float step, int color, Text description, Runnable onClick) {
-        super((int) x, (int) y, (int) (type.isVertical() ? width : height), (int) (type.isVertical() ? height : width), description, button -> onClick.run(), textSupplier -> Text.empty());
+    public ArrowButtonWidget(float x, float y, float width, float height, ArrowType type, float thickness, float step, int color, Component description, Runnable onClick) {
+        super((int) x, (int) y, (int) (type.isVertical() ? width : height), (int) (type.isVertical() ? height : width), description, button -> onClick.run()/*? if >=1.19.3 {*/, textSupplier -> Component.empty()/*?}*/);
         this.type = type;
         this.step = step;
         this.color = ColorUtil.toRGBA(color);
@@ -66,22 +69,44 @@ public class ArrowButtonWidget extends ButtonWidget {
 
         this.borderRadius = thickness * 0.5F;
         this.stickHeight = thickness;
-        this.stickWidth = MathHelper.sqrt(MathHelper.square(width / 2) + MathHelper.square(height - shiftY));
+        this.stickWidth = Mth.sqrt(Mth.square(width / 2) + Mth.square(height - shiftY));
     }
 
     @Override
-    protected void renderWidget(DrawContext drawContext, int mouseX, int mouseY, float delta) {
-        drawContext.getMatrices().push();
-        this.type.transform(drawContext.getMatrices(), this.getX(), this.getY(), this.width, this.height);
-        RenderSystemUtil.drawRectangle(drawContext.getMatrices(), this.x0, this.y0, this.stickWidth, this.stickHeight, this.borderRadius, 1F, -this.angle, this.step, color[0], color[1], color[2], color[3]);
-        RenderSystemUtil.drawRectangle(drawContext.getMatrices(), this.x1, this.y1, this.stickWidth, this.stickHeight, this.borderRadius, 1F, this.angle, this.step, color[0], color[1], color[2], color[3]);
-        drawContext.getMatrices().pop();
+    //? if >=26.1 {
+    /*protected void extractContents(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    *///?} else if >=1.21.11 {
+    /*protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    *///?} else if >=1.20 {
+    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    //?} else if >=1.19.4 {
+    /*public void renderWidget(PoseStack matrices, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(matrices, null);
+    *///?} else {
+    /*public void renderButton(PoseStack matrices, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(matrices, null);
+    *///?}
+        drawContext.pose().pushPose();
+        this.type.transform(drawContext.pose(), /*? if >=1.19.3 {*/this.getX(), this.getY()/*?} else {*//*this.x, this.y*//*?}*/, this.width, this.height);
+        RenderSystemUtil.drawRectangle(drawContext, this.x0, this.y0, this.stickWidth, this.stickHeight, this.borderRadius, 1F, -this.angle, this.step, color[0], color[1], color[2], color[3]);
+        RenderSystemUtil.drawRectangle(drawContext, this.x1, this.y1, this.stickWidth, this.stickHeight, this.borderRadius, 1F, this.angle, this.step, color[0], color[1], color[2], color[3]);
+        drawContext.pose().popPose();
     }
 
     @Override
+    //? if >=1.21.9 {
+    /*public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        int keyCode = event.key();
+    *///?} else
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (this.visible && this.type.isValidKey(keyCode)) {
-            this.mouseClicked(0, 0, 0);
+            //? if >=1.21.9 {
+            /*this.onPress(event);
+            *///?} else
+            this.onPress();
             return true;
         }
         return false;
@@ -135,7 +160,7 @@ public class ArrowButtonWidget extends ButtonWidget {
             return this == LEFT || this == RIGHT;
         }
 
-        public void transform(MatrixStack matrices, float x, float y, float width, float height) {
+        public void transform(PoseStack matrices, float x, float y, float width, float height) {
             if (this.isHorizontal()) {
                 float tmp = width;
                 // Seriously, what the duck is this inspection?
@@ -144,7 +169,7 @@ public class ArrowButtonWidget extends ButtonWidget {
                 height = tmp;
             }
             matrices.translate(x, y, 0);
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotation(Radians.R_PI_2 * this.i));
+            PoseUtil.rotateZ(matrices, Radians.R_PI_2 * this.i);
             matrices.translate(-x - (this.i == 2 || this.i == 3 ? width : 0), -y - ((this.i == 1 || this.i == 2 ? height : 0)), 0);
         }
     }

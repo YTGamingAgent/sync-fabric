@@ -1,0 +1,33 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DOD",
+    "Q#Q",
+    "ERE"
+  ],
+  "key": {
+    "D": {
+      "item": "minecraft:daylight_detector"
+    },
+    "O": {
+      "item": "minecraft:lapis_block"
+    },
+    "Q": {
+      "item": "minecraft:quartz"
+    },
+    "#": {
+      "item": "minecraft:nether_star"
+    },
+    "E": {
+      "item": "minecraft:emerald"
+    },
+    "R": {
+      "item": "minecraft:redstone_block"
+    }
+  },
+  "result": {
+    "id": "sync:sync_core",
+    "count": 1
+  },
+  "smart_recipes:conditions": "is_hardcore"
+}

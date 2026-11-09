@@ -82,39 +82,12 @@ The mod is highly configurable. Changing config options requires [Cloth Config A
 {
   "enableInstantShellConstruction": false,
   "warnPlayerInsteadOfKilling": false,
-  "fingerstickDamage": 20.0,
-  "hardcoreFingerstickDamage": 40.0,
-  "shellConstructorCapacity": 256000,
+  "fingerstickDamage": 0.5,
+  "hardcoreFingerstickDamage": 2.0,
   "shellStorageCapacity": 320,
   "shellStorageConsumption": 16,
   "shellStorageAcceptsRedstone": true,
   "shellStorageMaxUnpoweredLifespan": 20,
-  "energyMap": [
-    {
-      "entityId": "minecraft:chicken",
-      "outputEnergyQuantity": 2
-    },
-    {
-      "entityId": "minecraft:pig",
-      "outputEnergyQuantity": 16
-    },
-    {
-      "entityId": "minecraft:player",
-      "outputEnergyQuantity": 20
-    },
-    {
-      "entityId": "minecraft:wolf",
-      "outputEnergyQuantity": 24
-    },
-    {
-      "entityId": "minecraft:creeper",
-      "outputEnergyQuantity": 80
-    },
-    {
-      "entityId": "minecraft:enderman",
-      "outputEnergyQuantity": 160
-    }
-  ],
   "preserveOrigins": false,
   "syncPriority": [
     { "priority": "NATURAL" }
@@ -128,14 +101,12 @@ The mod is highly configurable. Changing config options requires [Cloth Config A
 | ---- | ----------- | ------------- |
 | `enableInstantShellConstruction` | If this option is enabled, creative-like shells will be constructed immediately, without the use of energy | `false` |
 | `warnPlayerInsteadOfKilling` | If this option is enabled, a player won't be killed by a shell constructor if they don't have enough health to create a new shell | `false` |
-| `fingerstickDamage` | The amount of damage that a shell constructor will deal to a player when they try to create a new shell | `20.0` |
-| `hardcoreFingerstickDamage` | The amount of damage that a shell constructor will deal to a player in the Hardcore mode when they try to create a new shell | `40.0` |
-| `shellConstructorCapacity` | The amount of energy required to construct a new shell | `256000` |
+| `fingerstickDamage` | The amount of damage that a shell constructor will deal to a player when they try to create a new shell | `0.5` |
+| `hardcoreFingerstickDamage` | The amount of damage that a shell constructor will deal to a player in the Hardcore mode when they try to create a new shell | `2.0` |
 | `shellStorageCapacity` | Determines capacity of a shell storage's inner battery | `320` |
 | `shellStorageConsumption` | Energy consumption of a shell storage's life support systems (per tick) | `16` |
 | `shellStorageAcceptsRedstone` | If this option is enabled, a shell storage can be powered by redstone | `true` |
 | `shellStorageMaxUnpoweredLifespan` | Determines how many ticks a shell can survive without a power supply connected to the corresponding shell storage | `20` |
-| `energyMap` | Specifies a list of entities that can produce energy via treadmills | [...](#user-content-config) |
 | `preserveOrigins` | If this option is enabled, all user shells will share the same [origins](https://www.curseforge.com/minecraft/mc-mods/origins) | `false` |
 | `syncPriority` | The order of shell selection for synchronization in case of death <br><br>Available `priority` values:<br><ul><li>`NATURAL` - non-artificial shells are prioritized</li><li>`NEAREST` - nearest shells are prioritized</li><li>`WHITE`, `ORANGE`, `MAGENTA`, `LIGHT_BLUE`, `YELLOW`, `LIME`, `PINK`, `GRAY`, `LIGHT_GRAY`, `CYAN`, `PURPLE`, `BLUE`, `BROWN`, `GREEN`, `RED`, `BLACK` - shells of the given color are prioritized</li><ul> | `[{ "priority": "NATURAL" }]` |
 | `wrench` | Identifier of an item that can be used as a wrench in order to change a shell constructor's state | `minecraft:stick` |

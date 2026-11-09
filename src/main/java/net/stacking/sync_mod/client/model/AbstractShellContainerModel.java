@@ -1,48 +1,50 @@
 package net.stacking.sync_mod.client.model;
 
+import net.stacking.sync_mod.util.math.Radians;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.DoubleBlockProperties;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
 
 @Environment(EnvType.CLIENT)
 public abstract class AbstractShellContainerModel extends DoubleBlockModel {
-    protected static final DoubleBlockProperties.Type BOTTOM = DoubleBlockProperties.Type.FIRST;
-    protected static final DoubleBlockProperties.Type TOP    = DoubleBlockProperties.Type.SECOND;
+    protected static final DoubleBlockCombiner.BlockType BOTTOM = DoubleBlockCombiner.BlockType.FIRST;
+    protected static final DoubleBlockCombiner.BlockType TOP = DoubleBlockCombiner.BlockType.SECOND;
+
+    public final ModelPart doorLL;
+    public final ModelPart doorLU;
+    public final ModelPart doorRL;
+    public final ModelPart doorRU;
 
     public float doorOpenProgress;
 
-    public AbstractShellContainerModel(int textureWidth, int textureHeight) {
-        // getEntityTranslucent renders the semi-transparent glass walls at their
-        // true alpha value (e.g. 30% opacity = clearly glassy).
-        // getEntityCutoutNoCull was discarding those pixels entirely (cutoff at 50%),
-        // which is why the glass appeared nearly invisible.
-        // Now that the renderer is AbstractShellContainerBlockEntityRenderer (not
-        // GeoBlockRenderer), translucent rendering works correctly.
-        super(RenderLayer::getEntityTranslucent, textureWidth, textureHeight);
+    public AbstractShellContainerModel() {
+        super(256, 256);
+        ModelPart rightDoor = this.createRotationTemplate(0, Radians.R_PI, 0);
+
+        this.doorLL = this.addCuboid(BOTTOM, 224, 32, -15, -8, -15, 15, 31, 1);
+        this.doorLU = this.addCuboid(TOP, 224, 0, -15, -6, -15, 15, 30, 1);
+
+        this.doorRL = this.addCuboid(BOTTOM, 224, 32, 15, -8, -14, 15, 31, 1, rightDoor);
+        this.doorRU = this.addCuboid(TOP, 224, 0, 15, -6, -14, 15, 30, 1, rightDoor);
     }
 
     @Override
-    protected void translate(MatrixStack matrices) {
-        // The renderer applies scale(-0.5, -0.5, 0.5), so a Y translate of -2
-        // in model space produces a world-space offset of (-0.5 * -2) = +1.0 block,
-        // which is exactly the gap between the lower and upper block.
-        matrices.translate(0, -2, 0);
-    }
+    public void render(DoubleBlockCombiner.BlockType type, PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+        this.doorLL.yRot = this.doorLU.yRot = Radians.R_PI_2 * this.doorOpenProgress;
+        this.doorRL.yRot = this.doorRU.yRot = Radians.R_PI - Radians.R_PI_2 * this.doorOpenProgress;
 
-    @Override
-    public void render(DoubleBlockProperties.Type type, MatrixStack matrices,
-                       VertexConsumer vertices, int light, int overlay, int color) {
-        if (this.doorOpenProgress > 0) {
-            this.renderDoors(type, matrices, vertices, light, overlay, color);
-        }
+        this.doorLL.z = this.doorLU.z = -15 + 15 * this.doorOpenProgress;
+        this.doorRL.z = this.doorRU.z = -14 + 14 * this.doorOpenProgress;
+        this.doorRL.x = this.doorRU.x = 15 - this.doorOpenProgress;
+
         super.render(type, matrices, vertices, light, overlay, color);
     }
 
-    protected abstract void renderDoors(DoubleBlockProperties.Type type,
-                                        MatrixStack matrices,
-                                        VertexConsumer vertices,
-                                        int light, int overlay, int color);
+    @Override
+    protected void translate(PoseStack matrices) {
+        matrices.translate(0, -2F, 0);
+    }
 }

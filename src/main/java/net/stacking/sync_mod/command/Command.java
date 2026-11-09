@@ -1,12 +1,12 @@
 package net.stacking.sync_mod.command;
 
 import com.mojang.brigadier.builder.ArgumentBuilder;
-import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.commands.CommandSourceStack;
 
 public interface Command {
     String getName();
 
-    boolean hasPermissions(ServerCommandSource commandSource);
+    boolean hasPermissions(CommandSourceStack commandSource);
 
-    void build(ArgumentBuilder<ServerCommandSource, ?> builder);
+    void build(ArgumentBuilder<CommandSourceStack, ?> builder);
 }

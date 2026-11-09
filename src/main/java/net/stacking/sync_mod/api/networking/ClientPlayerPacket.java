@@ -1,102 +1,115 @@
 package net.stacking.sync_mod.api.networking;
 
-import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+//? if >=1.20.5 {
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+//?} else {
+/*import io.netty.buffer.Unpooled;
+import net.minecraft.network.FriendlyByteBuf;
+*///?}
 
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * A packet sent from the server to a client.
+ */
 public interface ClientPlayerPacket extends PlayerPacket {
-    Map<Class<? extends ClientPlayerPacket>, ClientPlayerPacket> REGISTRY = new HashMap<>();
+    Map<ResourceLocation, ClientPlayerPacket> REGISTRY = new HashMap<>();
 
     @Environment(EnvType.CLIENT)
-    void execute(MinecraftClient client, ClientPlayerEntity player, ClientPlayNetworkHandler handler);
+    void execute(Minecraft client, LocalPlayer player, ClientPacketListener handler);
 
-    default Identifier getTargetWorldId() {
+    default ResourceLocation getTargetWorldId() {
         return null;
     }
 
-    default void send(ServerPlayerEntity player) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        this.write(buf);
-
-        // Copy only the readable bytes
-        byte[] data = new byte[buf.readableBytes()];
-        buf.readBytes(data);
-
-        ServerPlayNetworking.send(player, new PayloadWrapper(this.getId(), data));
+    default void send(ServerPlayer player) {
+        //? if >=1.20.5 {
+        ServerPlayNetworking.send(player, new RawPayload(Types.get(this.getId()), this.toBytes()));
+        //?} else {
+        /*ServerPlayNetworking.send(player, this.getId(), new FriendlyByteBuf(Unpooled.wrappedBuffer(this.toBytes())));
+        *///?}
     }
 
-    default void send(Collection<ServerPlayerEntity> players) {
-        for (ServerPlayerEntity player : players) {
-            send(player);
+    default void send(Collection<ServerPlayer> players) {
+        for (ServerPlayer player : players) {
+            this.send(player);
         }
     }
 
-    default void sendToAll(Collection<ServerPlayerEntity> players) {
-        send(players);
+    default void sendToAll(Collection<ServerPlayer> players) {
+        this.send(players);
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * Registers the packet type. Must run on both the client and the server (common initializer).
+     */
     static <T extends ClientPlayerPacket> void register(Class<T> packetClass) {
-        try {
-            T instance = packetClass.getDeclaredConstructor().newInstance();
-            REGISTRY.put(packetClass, instance);
+        T instance = PlayerPacket.instantiate(packetClass);
+        REGISTRY.put(instance.getId(), instance);
+        //? if >=1.20.5 {
+        CustomPacketPayload.Type<RawPayload> type = Types.create(instance.getId());
+        PayloadTypeRegistry./*? if >=26.1 {*//*clientboundPlay()*//*?} else {*/playS2C()/*?}*/.register(type, RawPayload.codec(type));
+        //?}
+    }
 
-            CustomPayload.Id<PayloadWrapper> payloadId = new CustomPayload.Id<>(instance.getId());
-
-            PayloadTypeRegistry.playS2C().register(
-                    payloadId,
-                    PacketCodec.of(
-                            (wrapper, buf) -> {
-                                buf.writeBytes(wrapper.data());
-                            },
-                            (buf) -> {
-                                // Read all remaining bytes
-                                byte[] data = new byte[buf.readableBytes()];
-                                buf.readBytes(data);
-                                return new PayloadWrapper(instance.getId(), data);
-                            }
-                    )
-            );
-
-            ClientPlayNetworking.registerGlobalReceiver(payloadId, (payload, context) -> {
-                try {
-                    T packet = packetClass.getDeclaredConstructor().newInstance();
-                    PacketByteBuf buf = new PacketByteBuf(Unpooled.wrappedBuffer(payload.data()));
-                    packet.read(buf);
-
-                    context.client().execute(() -> {
-                        if (context.player() != null) {
-                            packet.execute(context.client(), context.player(), context.client().getNetworkHandler());
-                        }
-                    });
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to handle packet: " + packetClass.getName(), e);
+    /**
+     * Registers the client-side handler for the packet (client initializer only).
+     */
+    @Environment(EnvType.CLIENT)
+    static <T extends ClientPlayerPacket> void registerReceiver(Class<T> packetClass) {
+        ResourceLocation id = PlayerPacket.instantiate(packetClass).getId();
+        //? if >=1.20.5 {
+        ClientPlayNetworking.registerGlobalReceiver(Types.get(id), (payload, context) -> {
+            T packet = PlayerPacket.fromBytes(packetClass, payload.data());
+            context.client().execute(() -> {
+                if (context.player() != null) {
+                    packet.execute(context.client(), context.player(), context.client().getConnection());
                 }
             });
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to register packet: " + packetClass.getName(), e);
-        }
+        });
+        //?} else {
+        /*ClientPlayNetworking.registerGlobalReceiver(id, (client, handler, buf, responseSender) -> {
+            byte[] data = new byte[buf.readableBytes()];
+            buf.readBytes(data);
+            T packet = PlayerPacket.fromBytes(packetClass, data);
+            client.execute(() -> {
+                if (client.player != null) {
+                    packet.execute(client, client.player, handler);
+                }
+            });
+        });
+        *///?}
     }
 
-    record PayloadWrapper(Identifier id, byte[] data) implements CustomPayload {
-        @Override
-        public CustomPayload.Id<? extends CustomPayload> getId() {
-            return new CustomPayload.Id<>(id);
+    //? if >=1.20.5 {
+    final class Types {
+        private static final Map<ResourceLocation, CustomPacketPayload.Type<RawPayload>> TYPES = new HashMap<>();
+
+        static CustomPacketPayload.Type<RawPayload> create(ResourceLocation id) {
+            return TYPES.computeIfAbsent(id, CustomPacketPayload.Type::new);
         }
+
+        static CustomPacketPayload.Type<RawPayload> get(ResourceLocation id) {
+            CustomPacketPayload.Type<RawPayload> type = TYPES.get(id);
+            if (type == null) {
+                throw new IllegalStateException("Packet type is not registered: " + id);
+            }
+            return type;
+        }
+
+        private Types() { }
     }
+    //?}
 }

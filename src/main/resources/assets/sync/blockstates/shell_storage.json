@@ -1,5 +1,7 @@
 {
-  "multipart": [
-    { "apply": { "model": "sync:block/shell_storage" } }
-  ]
+  "variants": {
+    "": {
+      "model": "sync:block/shell_storage"
+    }
+  }
 }

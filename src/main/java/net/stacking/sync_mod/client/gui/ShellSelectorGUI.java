@@ -1,26 +1,31 @@
 package net.stacking.sync_mod.client.gui;
 
+import net.stacking.sync_mod.util.WorldUtil;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Element;
-import net.minecraft.client.gui.Selectable;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+//? if >=1.20 {
+import net.minecraft.client.gui.GuiGraphics;
+//?} else
+/*import com.mojang.blaze3d.vertex.PoseStack;*/
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.narration.NarratableEntry;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.DyeColor;
 import net.stacking.sync_mod.api.shell.Shell;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.client.gui.TooltipProvider;
+//? if <1.21.2
 import net.stacking.sync_mod.client.gl.MSAAFramebuffer;
 import net.stacking.sync_mod.client.gui.controller.HudController;
 import net.stacking.sync_mod.client.gui.widget.ArrowButtonWidget;
 import net.stacking.sync_mod.client.gui.widget.CrossButtonWidget;
 import net.stacking.sync_mod.client.gui.widget.PageDisplayWidget;
 import net.stacking.sync_mod.client.gui.widget.ShellSelectorButtonWidget;
-import net.stacking.sync_mod.util.IdentifierUtil;
+import net.stacking.sync_mod.util.IdUtil;
 import net.stacking.sync_mod.util.client.render.ColorUtil;
 import net.stacking.sync_mod.util.math.Radians;
 
@@ -34,12 +39,12 @@ public class ShellSelectorGUI extends Screen {
     private static final int MAX_SLOTS = 8;
     private static final double MENU_RADIUS = 0.3F;
     private static final int BACKGROUND_COLOR = ColorUtil.getRgb(DyeColor.BLACK, 76);
-    private static final Text TITLE = Text.translatable("gui.sync.default.cross_button.title");
-    private static final Collection<Text> ARROW_TITLES = List.of(
-            Text.translatable("gui.sync.shell_selector.up.title"),
-            Text.translatable("gui.sync.shell_selector.right.title"),
-            Text.translatable("gui.sync.shell_selector.down.title"),
-            Text.translatable("gui.sync.shell_selector.left.title")
+    private static final Component TITLE = Component.translatable("gui.sync.default.cross_button.title");
+    private static final Collection<Component> ARROW_TITLES = List.of(
+            Component.translatable("gui.sync.shell_selector.up.title"),
+            Component.translatable("gui.sync.shell_selector.right.title"),
+            Component.translatable("gui.sync.shell_selector.down.title"),
+            Component.translatable("gui.sync.shell_selector.left.title")
     );
 
     private final Runnable onCloseCallback;
@@ -48,7 +53,7 @@ public class ShellSelectorGUI extends Screen {
     private List<ShellSelectorButtonWidget> shellButtons;
     private List<ArrowButtonWidget> arrowButtons;
     private CrossButtonWidget crossButton;
-    private PageDisplayWidget<Identifier, ShellState> pageDisplay;
+    private PageDisplayWidget<ResourceLocation, ShellState> pageDisplay;
 
     public ShellSelectorGUI(Runnable onCloseCallback, Runnable onRemovedCallback) {
         super(TITLE);
@@ -58,16 +63,16 @@ public class ShellSelectorGUI extends Screen {
 
     @Override
     public void init() {
-        ClientPlayerEntity player = Objects.requireNonNull(MinecraftClient.getInstance().player);
+        LocalPlayer player = Objects.requireNonNull(Minecraft.getInstance().player);
         Stream<ShellState> data = ((Shell)player).getAvailableShellStates();
-        Identifier selectedWorld = player.getWorld().getRegistryKey().getValue();
+        ResourceLocation selectedWorld = WorldUtil.level(player).dimension().location();
 
         this.wasClosed = false;
         this.arrowButtons = createArrowButtons(this.width, this.height, ARROW_TITLES,
                 List.of(this::previousSection, this::nextPage, this::nextSection, this::previousPage));
-        this.crossButton = createCrossButton(this.width, this.height, this::close);
+        this.crossButton = createCrossButton(this.width, this.height, this::onClose);
         this.pageDisplay = createPageDisplay(this.width, this.height, data, selectedWorld, MAX_SLOTS, this::onPageChange);
-        Stream.concat(this.arrowButtons.stream(), Stream.of(this.crossButton, this.pageDisplay)).forEach(this::addDrawableChild);
+        Stream.concat(this.arrowButtons.stream(), Stream.of(this.crossButton, this.pageDisplay)).forEach(this::addRenderableWidget);
 
         HudController.hide();
     }
@@ -96,17 +101,17 @@ public class ShellSelectorGUI extends Screen {
         return shellButtons;
     }
 
-    private static PageDisplayWidget<Identifier, ShellState> createPageDisplay(int screenWidth, int screenHeight, Stream<ShellState> data, Identifier defaultPage, int entriesPerPage, BiConsumer<PageDisplayWidget<Identifier, ShellState>, PageDisplayWidget<Identifier, ShellState>.Page> onChange) {
+    private static PageDisplayWidget<ResourceLocation, ShellState> createPageDisplay(int screenWidth, int screenHeight, Stream<ShellState> data, ResourceLocation defaultPage, int entriesPerPage, BiConsumer<PageDisplayWidget<ResourceLocation, ShellState>, PageDisplayWidget<ResourceLocation, ShellState>.Page> onChange) {
         final float FONT_HEIGHT = 1 / 30F;
 
         float cX = screenWidth / 2F;
         float cY = screenHeight / 2F;
-        float scale = screenHeight * FONT_HEIGHT / MinecraftClient.getInstance().textRenderer.fontHeight;
+        float scale = screenHeight * FONT_HEIGHT / Minecraft.getInstance().font.lineHeight;
 
-        return new PageDisplayWidget<>(cX, cY, scale, data, ShellState::getWorld, IdentifierUtil::prettifyAsText, defaultPage, entriesPerPage, onChange);
+        return new PageDisplayWidget<>(cX, cY, scale, data, ShellState::getWorld, IdUtil::prettifyAsText, defaultPage, entriesPerPage, onChange);
     }
 
-    private static List<ArrowButtonWidget> createArrowButtons(int screenWidth, int screenHeight, Iterable<Text> arrowTitles, Iterable<Runnable> arrowActions) {
+    private static List<ArrowButtonWidget> createArrowButtons(int screenWidth, int screenHeight, Iterable<Component> arrowTitles, Iterable<Runnable> arrowActions) {
         final float ARROW_HEIGHT = 2 / 75F;
         final float ARROW_WIDTH = 57 / 32F;
         final float ARROW_THICKNESS = 1 / 240F;
@@ -119,7 +124,7 @@ public class ShellSelectorGUI extends Screen {
         float arrowWidth = arrowHeight * ARROW_WIDTH;
         float thickness = screenHeight * ARROW_THICKNESS;
         Iterator<Runnable> actions = arrowActions.iterator();
-        Iterator<Text> descriptions = arrowTitles.iterator();
+        Iterator<Component> descriptions = arrowTitles.iterator();
         List<ArrowButtonWidget> arrowButtons = new ArrayList<>();
 
         for (ArrowButtonWidget.ArrowType arrowType : ArrowButtonWidget.ArrowType.values()) {
@@ -151,28 +156,73 @@ public class ShellSelectorGUI extends Screen {
         return new CrossButtonWidget(x, y, width, width, thickness, onClose);
     }
 
+    //? if >=26.1 {
+    /*@Override
+    public void extractBackground(GuiGraphics drawContext, int mouseX, int mouseY, float delta) {
+        if (Objects.requireNonNull(this.minecraft).level != null) {
+            drawContext.fillGradient(0, 0, this.width, this.height, BACKGROUND_COLOR, BACKGROUND_COLOR);
+        } else {
+            super.extractBackground(drawContext, mouseX, mouseY, delta);
+        }
+    }
+    *///?} else if >=1.20.2 {
     @Override
-    public void renderBackground(DrawContext drawContext, int mouseX, int mouseY, float delta) {
-        if (Objects.requireNonNull(this.client).world != null) {
+    public void renderBackground(GuiGraphics drawContext, int mouseX, int mouseY, float delta) {
+        if (Objects.requireNonNull(this.minecraft).level != null) {
             drawContext.fillGradient(0, 0, this.width, this.height, BACKGROUND_COLOR, BACKGROUND_COLOR);
         } else {
             super.renderBackground(drawContext, mouseX, mouseY, delta);
         }
     }
+    //?} else if >=1.20 {
+    /*@Override
+    public void renderBackground(GuiGraphics drawContext) {
+        if (Objects.requireNonNull(this.minecraft).level != null) {
+            drawContext.fillGradient(0, 0, this.width, this.height, BACKGROUND_COLOR, BACKGROUND_COLOR);
+        } else {
+            super.renderBackground(drawContext);
+        }
+    }
+    *///?} else {
+    /*@Override
+    public void renderBackground(PoseStack matrices) {
+        if (Objects.requireNonNull(this.minecraft).level != null) {
+            new GuiContext(matrices, this).fill(0, 0, this.width, this.height, BACKGROUND_COLOR);
+        } else {
+            super.renderBackground(matrices);
+        }
+    }
+    *///?}
 
     @Override
-    public void render(DrawContext drawContext, int mouseX, int mouseY, float delta) {
-        this.renderBackground(drawContext, mouseX, mouseY, delta);
-        MSAAFramebuffer.use(MSAAFramebuffer.MAX_SAMPLES, () -> super.render(drawContext, mouseX, mouseY, delta));
+    //? if >=26.1 {
+    /*public void extractRenderState(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    *///?} else if >=1.20 {
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    //?} else {
+    /*public void render(PoseStack graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics, this);
+    *///?}
+        // Since 1.20.2 Screen#render draws the background itself.
+        //? if <1.20.2
+        /*this.renderBackground(graphics);*/
+        //? if >=26.1 {
+        /*super.extractRenderState(graphics, mouseX, mouseY, delta);
+        *///?} else if >=1.21.2 {
+        /*super.render(graphics, mouseX, mouseY, delta);
+        *///?} else
+        MSAAFramebuffer.use(MSAAFramebuffer.MAX_SAMPLES, () -> super.render(graphics, mouseX, mouseY, delta));
         this.renderTooltips(drawContext, mouseX, mouseY);
     }
 
-    protected void renderTooltips(DrawContext drawContext, int mouseX, int mouseY) {
-        for (Element child : this.children()) {
-            if (child instanceof Selectable selectable && selectable.getType() != Selectable.SelectionType.NONE) {
-                Text tooltipText = selectable instanceof TooltipProvider tooltipProvider ? tooltipProvider.getTooltip() : null;
+    protected void renderTooltips(GuiContext drawContext, int mouseX, int mouseY) {
+        for (GuiEventListener child : this.children()) {
+            if (child instanceof NarratableEntry selectable && selectable.narrationPriority() != NarratableEntry.NarrationPriority.NONE) {
+                Component tooltipText = selectable instanceof TooltipProvider tooltipProvider ? tooltipProvider.getTooltip() : null;
                 if (tooltipText != null) {
-                    drawContext.drawTooltip(textRenderer, tooltipText, mouseX, mouseY);
+                    drawContext.renderTooltip(font, tooltipText, mouseX, mouseY);
                 }
                 return;
             }
@@ -180,13 +230,23 @@ public class ShellSelectorGUI extends Screen {
     }
 
     @Override
+    //? if >=1.21.9 {
+    /*public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if (super.keyPressed(event)) {
+            return true;
+        }
+
+        for (GuiEventListener child : this.children()) {
+            if (child.keyPressed(event)) {
+    *///?} else {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (super.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
 
-        for (Element child : this.children()) {
+        for (GuiEventListener child : this.children()) {
             if (child.keyPressed(keyCode, scanCode, modifiers)) {
+    //?}
                 return true;
             }
         }
@@ -200,22 +260,22 @@ public class ShellSelectorGUI extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 
-    private void onPageChange(PageDisplayWidget<Identifier, ShellState> pageDisplay, PageDisplayWidget<Identifier, ShellState>.Page page) {
+    private void onPageChange(PageDisplayWidget<ResourceLocation, ShellState> pageDisplay, PageDisplayWidget<ResourceLocation, ShellState>.Page page) {
         for (ArrowButtonWidget arrow : this.arrowButtons) {
             arrow.visible = arrow.type.isVertical() ? pageDisplay.hasMoreSections() : pageDisplay.hasMorePages();
         }
 
         if (this.shellButtons != null) {
-            this.shellButtons.forEach(this::remove);
+            this.shellButtons.forEach(this::removeWidget);
         }
 
         List<ShellState> content = page.content;
         this.shellButtons = createShellButtons(this.width, this.height, Math.max(content.size(), 1));
-        this.shellButtons.forEach(this::addDrawableChild);
+        this.shellButtons.forEach(this::addRenderableWidget);
 
         for (int i = 0; i < content.size(); ++i) {
             this.shellButtons.get(i).shell = content.get(i);
@@ -239,13 +299,13 @@ public class ShellSelectorGUI extends Screen {
     }
 
     @Override
-    public void close() {
+    public void onClose() {
         HudController.restore();
         if (this.onCloseCallback != null) {
             this.onCloseCallback.run();
         }
         this.wasClosed = true;
-        super.close();
+        super.onClose();
     }
 
     @Override

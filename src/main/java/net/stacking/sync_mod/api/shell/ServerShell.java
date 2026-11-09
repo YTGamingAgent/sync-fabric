@@ -2,7 +2,9 @@ package net.stacking.sync_mod.api.shell;
 
 import com.mojang.datafixers.util.Either;
 import net.stacking.sync_mod.api.event.PlayerSyncEvents;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.server.MinecraftServer;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +33,19 @@ public interface ServerShell extends Shell {
      */
     void apply(ShellState state);
 
+    /**
+     * @return Location of the player's primary shell storage (where their original body is parked while they use a shell), if any.
+     */
+    @Nullable
+    GlobalPos getPrimaryShellStorage();
+
+    /**
+     * Sets the location of the player's primary shell storage.
+     *
+     * @param pos Location of the storage, or {@code null} to clear it.
+     */
+    void setPrimaryShellStorage(@Nullable GlobalPos pos);
+
 
     /**
      * Returns a shell with the given uuid.
@@ -40,7 +55,7 @@ public interface ServerShell extends Shell {
      * @return Shell with the given uuid.
      */
     static Optional<ServerShell> getByUuid(MinecraftServer server, UUID uuid) {
-        return Optional.ofNullable((ServerShell)server.getPlayerManager().getPlayer(uuid));
+        return Optional.ofNullable((ServerShell)server.getPlayerList().getPlayer(uuid));
     }
 
     /**
@@ -51,6 +66,6 @@ public interface ServerShell extends Shell {
      * @return Shell with the given name.
      */
     static Optional<ServerShell> getByName(MinecraftServer server, String name) {
-        return Optional.ofNullable((ServerShell)server.getPlayerManager().getPlayer(name));
+        return Optional.ofNullable((ServerShell)server.getPlayerList().getPlayerByName(name));
     }
 }

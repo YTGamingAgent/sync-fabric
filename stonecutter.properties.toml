@@ -1,0 +1,137 @@
+# Mod and dependency versions for every Minecraft version group.
+# Each [section] is one build (one jar). The jar is named sync-<version>+mc<mc_label>.jar.
+mod.id = "sync"
+mod.name = "Sync"
+mod.group = "net.stacking"
+mod.version = "6.0.0"
+
+deps.fabric_loader = "0.20.1"
+loomx.loom_version = "1.19.4"
+
+["1.19.2"]
+mod.mc_label = "1.19.2"
+mod.mc_compat = "1.19.2"
+deps.fabric_api = "0.77.0+1.19.2"
+deps.energy = "2.3.0"
+deps.cloth_config = "8.3.134+fabric"
+deps.modmenu = "4.1.2"
+
+["1.19.3"]
+mod.mc_label = "1.19.3"
+mod.mc_compat = "1.19.3"
+deps.fabric_api = "0.76.1+1.19.3"
+deps.energy = "2.3.0"
+deps.cloth_config = "9.1.104+fabric"
+deps.modmenu = "5.1.0"
+
+["1.19.4"]
+mod.mc_label = "1.19.4"
+mod.mc_compat = "1.19.4"
+deps.fabric_api = "0.87.2+1.19.4"
+deps.energy = "3.0.0"
+deps.cloth_config = "10.1.135+fabric"
+deps.modmenu = "6.3.1"
+
+["1.20.1"]
+mod.mc_label = "1.20-1.20.1"
+mod.mc_compat = ">=1.20 <=1.20.1"
+deps.fabric_api = "0.92.12+1.20.1"
+deps.energy = "3.0.0"
+deps.cloth_config = "11.1.136+fabric"
+deps.modmenu = "7.2.2"
+
+["1.20.2"]
+mod.mc_label = "1.20.2"
+mod.mc_compat = "1.20.2"
+deps.fabric_api = "0.91.6+1.20.2"
+deps.energy = "3.0.0"
+deps.cloth_config = "12.0.137+fabric"
+deps.modmenu = "8.0.1"
+
+["1.20.4"]
+mod.mc_label = "1.20.3-1.20.4"
+mod.mc_compat = ">=1.20.3 <=1.20.4"
+deps.fabric_api = "0.97.3+1.20.4"
+deps.energy = "3.0.0"
+deps.cloth_config = "13.0.138+fabric"
+deps.modmenu = "9.2.0"
+
+["1.20.6"]
+mod.mc_label = "1.20.5-1.20.6"
+mod.mc_compat = ">=1.20.5 <=1.20.6"
+deps.fabric_api = "0.100.8+1.20.6"
+deps.energy = "4.0.0"
+deps.cloth_config = "14.0.139+fabric"
+deps.modmenu = "10.0.0"
+
+["1.21.1"]
+mod.mc_label = "1.21-1.21.1"
+mod.mc_compat = ">=1.21 <=1.21.1"
+deps.fabric_api = "0.116.17+1.21.1"
+deps.energy = "4.1.0"
+deps.cloth_config = "15.0.140+fabric"
+deps.modmenu = "11.0.5"
+
+["1.21.3"]
+mod.mc_label = "1.21.2-1.21.3"
+mod.mc_compat = ">=1.21.2 <=1.21.3"
+deps.fabric_api = "0.114.1+1.21.3"
+deps.energy = "4.1.0"
+deps.cloth_config = "16.0.143+fabric"
+deps.modmenu = "12.0.1"
+
+["1.21.4"]
+mod.mc_label = "1.21.4"
+mod.mc_compat = "1.21.4"
+deps.fabric_api = "0.119.4+1.21.4"
+deps.energy = "4.1.0"
+deps.cloth_config = "17.0.144+fabric"
+deps.modmenu = "13.0.4"
+
+["1.21.5"]
+mod.mc_label = "1.21.5"
+mod.mc_compat = "1.21.5"
+deps.fabric_api = "0.128.2+1.21.5"
+deps.energy = "4.2.0"
+deps.cloth_config = "18.0.145+fabric"
+deps.modmenu = "14.0.2"
+
+["1.21.8"]
+mod.mc_label = "1.21.6-1.21.8"
+mod.mc_compat = ">=1.21.6 <=1.21.8"
+deps.fabric_api = "0.136.1+1.21.8"
+deps.energy = "4.2.0"
+deps.cloth_config = "19.0.147+fabric"
+deps.modmenu = "15.0.2"
+
+["1.21.10"]
+mod.mc_label = "1.21.9-1.21.10"
+mod.mc_compat = ">=1.21.9 <=1.21.10"
+deps.fabric_api = "0.138.4+1.21.10"
+deps.energy = "4.2.0"
+deps.cloth_config = "20.0.149+fabric"
+deps.modmenu = "16.0.1"
+
+["1.21.11"]
+mod.mc_label = "1.21.11"
+mod.mc_compat = "1.21.11"
+deps.fabric_api = "0.141.6+1.21.11"
+deps.energy = "4.2.0"
+deps.cloth_config = "21.11.153+fabric"
+deps.modmenu = "17.0.1"
+
+["26.1.2"]
+mod.mc_label = "26.1-26.1.2"
+mod.mc_compat = "~26.1"
+deps.fabric_api = "0.155.3+26.1.2"
+deps.energy = "5.0.0"
+deps.cloth_config = "26.1.154+fabric"
+deps.modmenu = "18.0.2"
+
+["26.2"]
+mod.mc_label = "26.2"
+mod.mc_compat = "~26.2"
+deps.fabric_api = "0.161.0+26.2"
+deps.energy = "5.0.0"
+deps.cloth_config = "26.2.155+fabric"
+deps.modmenu = "20.0.3"

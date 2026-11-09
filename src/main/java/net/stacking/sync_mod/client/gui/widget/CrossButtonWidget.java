@@ -6,21 +6,20 @@ import net.stacking.sync_mod.util.math.QuarticFunction;
 import net.stacking.sync_mod.util.math.Radians;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.MathHelper;
+import net.stacking.sync_mod.client.gui.GuiContext;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.DyeColor;
 
 @Environment(EnvType.CLIENT)
 public class CrossButtonWidget extends AbstractButtonWidget {
-    private static final Text DEFAULT_DESCRIPTION = Text.translatable("gui.sync.default.cross_button.title");
+    private static final Component DEFAULT_DESCRIPTION = Component.translatable("gui.sync.default.cross_button.title");
     private static final int DEFAULT_COLOR = ColorUtil.fromDyeColor(DyeColor.WHITE);
     private static final float DEFAULT_STEP = Radians.R_PI_32;
 
     private final float step;
     private final float[] color;
-    private final Text description;
+    private final Component description;
     private final float x0;
     private final float y0;
     private final float x1;
@@ -38,15 +37,15 @@ public class CrossButtonWidget extends AbstractButtonWidget {
         this(x, y, width, height, thickness, DEFAULT_STEP, color, DEFAULT_DESCRIPTION, onClick);
     }
 
-    public CrossButtonWidget(float x, float y, float width, float height, float thickness, Text description, Runnable onClick) {
+    public CrossButtonWidget(float x, float y, float width, float height, float thickness, Component description, Runnable onClick) {
         this(x, y, width, height, thickness, DEFAULT_STEP, DEFAULT_COLOR, description, onClick);
     }
 
-    public CrossButtonWidget(float x, float y, float width, float height, float thickness, int color, Text description, Runnable onClick) {
+    public CrossButtonWidget(float x, float y, float width, float height, float thickness, int color, Component description, Runnable onClick) {
         this(x, y, width, height, thickness, DEFAULT_STEP, color, description, onClick);
     }
 
-    public CrossButtonWidget(float x, float y, float width, float height, float thickness, float step, int color, Text description, Runnable onClick) {
+    public CrossButtonWidget(float x, float y, float width, float height, float thickness, float step, int color, Component description, Runnable onClick) {
         super(x, y, width, height, onClick);
         this.step = step;
         this.color = ColorUtil.toRGBA(color);
@@ -61,26 +60,28 @@ public class CrossButtonWidget extends AbstractButtonWidget {
         this.y1 = y;
         this.borderRadius = thickness * 0.5F;
         this.stickHeight = thickness;
-        this.stickWidth = MathHelper.sqrt(MathHelper.square(width - shiftX) + MathHelper.square(height - shiftY));
+        this.stickWidth = Mth.sqrt(Mth.square(width - shiftX) + Mth.square(height - shiftY));
     }
 
     @Override
-    protected void renderContent(DrawContext drawContext, int mouseX, int mouseY, float delta) {
-        RenderSystemUtil.drawRectangle(drawContext.getMatrices(), this.x0, this.y0, this.stickWidth, this.stickHeight, this.borderRadius, 1, -this.angle, this.step, this.color[0], this.color[1], this.color[2], this.color[3]);
-        RenderSystemUtil.drawRectangle(drawContext.getMatrices(), this.x1, this.y1, this.stickWidth, this.stickHeight, this.borderRadius, 1, this.angle, this.step, this.color[0], this.color[1], this.color[2], this.color[3]);
+    protected void renderContent(GuiContext drawContext, int mouseX, int mouseY, float delta) {
+        RenderSystemUtil.drawRectangle(drawContext, this.x0, this.y0, this.stickWidth, this.stickHeight, this.borderRadius, 1, -this.angle, this.step, this.color[0], this.color[1], this.color[2], this.color[3]);
+        RenderSystemUtil.drawRectangle(drawContext, this.x1, this.y1, this.stickWidth, this.stickHeight, this.borderRadius, 1, this.angle, this.step, this.color[0], this.color[1], this.color[2], this.color[3]);
     }
 
     @Override
-    protected Text getWidgetDescription() {
+    protected Component getWidgetDescription() {
         return this.description;
     }
 
     private boolean focused;
+    //? if >=1.19.4
     @Override
     public void setFocused(boolean focused) {
         this.focused = focused;
     }
 
+    //? if >=1.19.4
     @Override
     public boolean isFocused() {
         return focused;

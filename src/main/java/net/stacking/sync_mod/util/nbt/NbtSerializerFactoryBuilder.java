@@ -1,14 +1,15 @@
 package net.stacking.sync_mod.util.nbt;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.stacking.sync_mod.util.IdUtil;
 
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.DyeColor;
 
 /**
  * Small builder for {@link NbtSerializerFactory}.
@@ -17,39 +18,39 @@ import java.util.function.Function;
  * stable across Yarn / Mojang mapping changes.</p>
  */
 public final class NbtSerializerFactoryBuilder<T> {
-    private static final Map<Class<?>, BiFunction<NbtCompound, String, ?>> NBT_GETTERS = new HashMap<>();
+    private static final Map<Class<?>, BiFunction<CompoundTag, String, ?>> NBT_GETTERS = new HashMap<>();
 
     static {
-        BiFunction<BiFunction<NbtCompound, String, ?>, BiFunction<NbtCompound, String, ?>, BiFunction<NbtCompound, String, ?>> getOrDefault =
+        BiFunction<BiFunction<CompoundTag, String, ?>, BiFunction<CompoundTag, String, ?>, BiFunction<CompoundTag, String, ?>> getOrDefault =
                 (getter, defaultValue) -> (nbt, key) -> nbt.contains(key) ? getter.apply(nbt, key) : defaultValue.apply(nbt, key);
 
-        NBT_GETTERS.put(boolean.class, getOrDefault.apply(NbtCompound::getBoolean, (x, key) -> false));
-        NBT_GETTERS.put(Boolean.class, getOrDefault.apply(NbtCompound::getBoolean, (x, key) -> false));
-        NBT_GETTERS.put(byte.class, getOrDefault.apply(NbtCompound::getByte, (x, key) -> (byte) 0));
-        NBT_GETTERS.put(Byte.class, getOrDefault.apply(NbtCompound::getByte, (x, key) -> (byte) 0));
-        NBT_GETTERS.put(short.class, getOrDefault.apply(NbtCompound::getShort, (x, key) -> (short) 0));
-        NBT_GETTERS.put(Short.class, getOrDefault.apply(NbtCompound::getShort, (x, key) -> (short) 0));
-        NBT_GETTERS.put(int.class, getOrDefault.apply(NbtCompound::getInt, (x, key) -> 0));
-        NBT_GETTERS.put(Integer.class, getOrDefault.apply(NbtCompound::getInt, (x, key) -> 0));
-        NBT_GETTERS.put(long.class, getOrDefault.apply(NbtCompound::getLong, (x, key) -> 0L));
-        NBT_GETTERS.put(Long.class, getOrDefault.apply(NbtCompound::getLong, (x, key) -> 0L));
-        NBT_GETTERS.put(float.class, getOrDefault.apply(NbtCompound::getFloat, (x, key) -> 0F));
-        NBT_GETTERS.put(Float.class, getOrDefault.apply(NbtCompound::getFloat, (x, key) -> 0F));
-        NBT_GETTERS.put(double.class, getOrDefault.apply(NbtCompound::getDouble, (x, key) -> 0D));
-        NBT_GETTERS.put(Double.class, getOrDefault.apply(NbtCompound::getDouble, (x, key) -> 0D));
-        NBT_GETTERS.put(String.class, getOrDefault.apply(NbtCompound::getString, (x, key) -> ""));
-        NBT_GETTERS.put(UUID.class, getOrDefault.apply(NbtCompound::getUuid, (x, key) -> new UUID(0, 0)));
-        NBT_GETTERS.put(Identifier.class, getOrDefault.apply((x, key) -> Identifier.tryParse(x.getString(key)), (x, key) -> Identifier.of("missingno")));
-        NBT_GETTERS.put(DyeColor.class, getOrDefault.apply((nbt, key) -> DyeColor.byId(nbt.getInt(key)), (nbt, key) -> null));
+        NBT_GETTERS.put(boolean.class, getOrDefault.apply(Nbt::getBoolean, (x, key) -> false));
+        NBT_GETTERS.put(Boolean.class, getOrDefault.apply(Nbt::getBoolean, (x, key) -> false));
+        NBT_GETTERS.put(byte.class, getOrDefault.apply(Nbt::getByte, (x, key) -> (byte) 0));
+        NBT_GETTERS.put(Byte.class, getOrDefault.apply(Nbt::getByte, (x, key) -> (byte) 0));
+        NBT_GETTERS.put(short.class, getOrDefault.apply(Nbt::getShort, (x, key) -> (short) 0));
+        NBT_GETTERS.put(Short.class, getOrDefault.apply(Nbt::getShort, (x, key) -> (short) 0));
+        NBT_GETTERS.put(int.class, getOrDefault.apply(Nbt::getInt, (x, key) -> 0));
+        NBT_GETTERS.put(Integer.class, getOrDefault.apply(Nbt::getInt, (x, key) -> 0));
+        NBT_GETTERS.put(long.class, getOrDefault.apply(Nbt::getLong, (x, key) -> 0L));
+        NBT_GETTERS.put(Long.class, getOrDefault.apply(Nbt::getLong, (x, key) -> 0L));
+        NBT_GETTERS.put(float.class, getOrDefault.apply(Nbt::getFloat, (x, key) -> 0F));
+        NBT_GETTERS.put(Float.class, getOrDefault.apply(Nbt::getFloat, (x, key) -> 0F));
+        NBT_GETTERS.put(double.class, getOrDefault.apply(Nbt::getDouble, (x, key) -> 0D));
+        NBT_GETTERS.put(Double.class, getOrDefault.apply(Nbt::getDouble, (x, key) -> 0D));
+        NBT_GETTERS.put(String.class, getOrDefault.apply(Nbt::getString, (x, key) -> ""));
+        NBT_GETTERS.put(UUID.class, getOrDefault.apply(Nbt::getUuid, (x, key) -> new UUID(0, 0)));
+        NBT_GETTERS.put(ResourceLocation.class, getOrDefault.apply((x, key) -> ResourceLocation.tryParse(Nbt.getString(x, key)), (x, key) -> IdUtil.vanilla("missingno")));
+        NBT_GETTERS.put(DyeColor.class, getOrDefault.apply((nbt, key) -> DyeColor.byId(Nbt.getInt(nbt, key)), (nbt, key) -> null));
         NBT_GETTERS.put(BlockPos.class, getOrDefault.apply((nbt, key) -> {
             if (nbt.contains(key)) {
-                long[] pos = nbt.getLongArray(key);
+                long[] pos = Nbt.getLongArray(nbt, key);
                 if (pos.length == 3) {
                     return new BlockPos((int) pos[0], (int) pos[1], (int) pos[2]);
                 }
             }
-            return BlockPos.ORIGIN;
-        }, (x, key) -> BlockPos.ORIGIN));
+            return BlockPos.ZERO;
+        }, (x, key) -> BlockPos.ZERO));
     }
 
     private final List<FieldSerializer<T>> serializers = new ArrayList<>();
@@ -62,7 +63,7 @@ public final class NbtSerializerFactoryBuilder<T> {
     }
 
     public <V> NbtSerializerFactoryBuilder<T> add(Class<V> type, String key, Function<T, V> getter, BiConsumer<T, V> setter) {
-        BiFunction<NbtCompound, String, ?> nbtGetter = NBT_GETTERS.get(type);
+        BiFunction<CompoundTag, String, ?> nbtGetter = NBT_GETTERS.get(type);
         if (nbtGetter == null) {
             throw new IllegalArgumentException("Unsupported type: " + type.getName());
         }
@@ -100,7 +101,7 @@ public final class NbtSerializerFactoryBuilder<T> {
     }
 
     @SuppressWarnings("unchecked")
-    private static <V> void putToNbt(NbtCompound nbt, String key, V value, Class<V> type) {
+    private static <V> void putToNbt(CompoundTag nbt, String key, V value, Class<V> type) {
         if (type == boolean.class || type == Boolean.class) {
             nbt.putBoolean(key, (Boolean) value);
         } else if (type == byte.class || type == Byte.class) {
@@ -118,15 +119,15 @@ public final class NbtSerializerFactoryBuilder<T> {
         } else if (type == String.class) {
             nbt.putString(key, (String) value);
         } else if (type == UUID.class) {
-            nbt.putUuid(key, (UUID) value);
-        } else if (type == Identifier.class) {
+            Nbt.putUuid(nbt, key, (UUID) value);
+        } else if (type == ResourceLocation.class) {
             nbt.putString(key, value.toString());
         } else if (type == DyeColor.class) {
             nbt.putInt(key, ((DyeColor) value).getId());
         } else if (type == BlockPos.class) {
             BlockPos pos = (BlockPos) value;
             nbt.putLongArray(key, new long[]{pos.getX(), pos.getY(), pos.getZ()});
-        } else if (value instanceof NbtCompound compound) {
+        } else if (value instanceof CompoundTag compound) {
             nbt.put(key, compound);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + type.getName());

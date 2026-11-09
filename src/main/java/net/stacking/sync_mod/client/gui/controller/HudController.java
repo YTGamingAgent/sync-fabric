@@ -2,12 +2,12 @@ package net.stacking.sync_mod.client.gui.controller;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.GameOptions;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
 
 @Environment(EnvType.CLIENT)
 public final class HudController {
-    private static final GameOptions GAME_OPTIONS = MinecraftClient.getInstance().options;
+    private static final Options GAME_OPTIONS = Minecraft.getInstance().options;
     private static Boolean wasHudHidden;
 
     public static void show() {
@@ -20,15 +20,31 @@ public final class HudController {
 
     private static void setHudHidden(boolean value) {
         if (wasHudHidden == null) {
-            wasHudHidden = GAME_OPTIONS.hudHidden;
+            wasHudHidden = isHudHidden();
         }
-        GAME_OPTIONS.hudHidden = value;
+        setHidden(value);
     }
 
     public static void restore() {
         if (wasHudHidden != null) {
-            GAME_OPTIONS.hudHidden = wasHudHidden;
+            setHidden(wasHudHidden);
             wasHudHidden = null;
         }
+    }
+
+    private static boolean isHudHidden() {
+        //? if >=26.2 {
+        /*return Minecraft.getInstance().gui.hud.isHidden();
+        *///?} else
+        return GAME_OPTIONS.hideGui;
+    }
+
+    private static void setHidden(boolean value) {
+        //? if >=26.2 {
+        /*if (isHudHidden() != value) {
+            Minecraft.getInstance().gui.hud.toggle();
+        }
+        *///?} else
+        GAME_OPTIONS.hideGui = value;
     }
 }

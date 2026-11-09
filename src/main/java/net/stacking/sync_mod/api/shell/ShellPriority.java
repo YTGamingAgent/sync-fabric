@@ -1,19 +1,18 @@
 package net.stacking.sync_mod.api.shell;
 
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.StringIdentifiable;
-import net.minecraft.util.math.BlockPos;
-
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.stream.Stream;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.StringRepresentable;
+import net.minecraft.world.item.DyeColor;
 
 /**
  * Describes priority of one shell over others.
  */
-public enum ShellPriority implements StringIdentifiable {
+public enum ShellPriority implements StringRepresentable {
     /**
      * White shells are prioritized.
      */
@@ -127,7 +126,7 @@ public enum ShellPriority implements StringIdentifiable {
      * @return the name of this enum constant.
      */
     @Override
-    public String asString() {
+    public String getSerializedName() {
         return this.name;
     }
 
@@ -188,7 +187,7 @@ public enum ShellPriority implements StringIdentifiable {
      * @param priority The {@linkplain ShellPriority} value.
      * @return the comparator that can be used to sort {@linkplain ShellState}s with respect to the specified priority.
      */
-    public static Comparator<ShellState> asComparator(Identifier world, BlockPos pos, ShellPriority priority) {
+    public static Comparator<ShellState> asComparator(ResourceLocation world, BlockPos pos, ShellPriority priority) {
         return (a, b) -> {
             DyeColor color = priority.id >= 0 && priority.id <= 15 ? DyeColor.byId(priority.id) : null;
             if (color != null && (a.getColor() != b.getColor()) && (a.getColor() == color || b.getColor() == color)) {
@@ -203,7 +202,7 @@ public enum ShellPriority implements StringIdentifiable {
                 boolean aWorld = a.getWorld().equals(world);
                 boolean bWorld = b.getWorld().equals(world);
                 if (aWorld && bWorld) {
-                    return Double.compare(a.getPos().getSquaredDistance(pos), b.getPos().getSquaredDistance(pos));
+                    return Double.compare(a.getPos().distSqr(pos), b.getPos().distSqr(pos));
                 }
                 return Boolean.compare(bWorld, aWorld);
             }
@@ -219,7 +218,7 @@ public enum ShellPriority implements StringIdentifiable {
      * @param priorities The {@linkplain ShellPriority} values.
      * @return the comparator that can be used to sort {@linkplain ShellState}s with respect to the specified priorities.
      */
-    public static Comparator<ShellState> asComparator(Identifier world, BlockPos pos, ShellPriority... priorities) {
+    public static Comparator<ShellState> asComparator(ResourceLocation world, BlockPos pos, ShellPriority... priorities) {
         return asComparator(world, pos, Arrays.stream(priorities));
     }
 
@@ -231,7 +230,7 @@ public enum ShellPriority implements StringIdentifiable {
      * @param priorities The {@linkplain ShellPriority} values.
      * @return the comparator that can be used to sort {@linkplain ShellState}s with respect to the specified priorities.
      */
-    public static Comparator<ShellState> asComparator(Identifier world, BlockPos pos, Collection<ShellPriority> priorities) {
+    public static Comparator<ShellState> asComparator(ResourceLocation world, BlockPos pos, Collection<ShellPriority> priorities) {
         return asComparator(world, pos, priorities.stream());
     }
 
@@ -243,7 +242,7 @@ public enum ShellPriority implements StringIdentifiable {
      * @param priorities The {@linkplain ShellPriority} values.
      * @return the comparator that can be used to sort {@linkplain ShellState}s with respect to the specified priorities.
      */
-    public static Comparator<ShellState> asComparator(Identifier world, BlockPos pos, Stream<ShellPriority> priorities) {
+    public static Comparator<ShellState> asComparator(ResourceLocation world, BlockPos pos, Stream<ShellPriority> priorities) {
         return priorities.reduce((__, ___) -> 0, (acc, x) -> acc.thenComparing(asComparator(world, pos, x)), Comparator::thenComparing);
     }
 }

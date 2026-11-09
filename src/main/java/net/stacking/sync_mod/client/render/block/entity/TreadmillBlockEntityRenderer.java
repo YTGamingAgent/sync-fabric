@@ -1,88 +1,42 @@
 package net.stacking.sync_mod.client.render.block.entity;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.RotationAxis;
-import net.minecraft.util.math.Box;
+import net.stacking.sync_mod.Sync;
+import net.stacking.sync_mod.block.SyncBlocks;
 import net.stacking.sync_mod.block.TreadmillBlock;
 import net.stacking.sync_mod.block.entity.TreadmillBlockEntity;
-import software.bernie.geckolib.cache.object.BakedGeoModel;
-import software.bernie.geckolib.model.GeoModel;
-import software.bernie.geckolib.renderer.GeoBlockRenderer;
+import net.stacking.sync_mod.client.model.DoubleBlockModel;
+import net.stacking.sync_mod.client.model.TreadmillModel;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.state.BlockState;
 
-public class TreadmillBlockEntityRenderer extends GeoBlockRenderer<TreadmillBlockEntity> {
+@Environment(EnvType.CLIENT)
+public class TreadmillBlockEntityRenderer extends DoubleBlockEntityRenderer<TreadmillBlockEntity> {
+    private static final ResourceLocation TREADMILL_TEXTURE_ID = Sync.locate("textures/block/treadmill.png");
+    private static final BlockState DEFAULT_STATE = SyncBlocks.TREADMILL.defaultBlockState().setValue(TreadmillBlock.PART, TreadmillBlock.Part.FRONT).setValue(TreadmillBlock.FACING, Direction.SOUTH);
 
-    public TreadmillBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
-        super(new GeoModel<TreadmillBlockEntity>() {
-            @Override
-            public Identifier getModelResource(TreadmillBlockEntity a) {
-                return Identifier.of("sync", "geo/treadmill.geo.json");
-            }
+    private final DoubleBlockModel model;
 
-            @Override
-            public Identifier getTextureResource(TreadmillBlockEntity a) {
-                return Identifier.of("sync", "textures/block/treadmill.png");
-            }
-
-            @Override
-            public Identifier getAnimationResource(TreadmillBlockEntity a) {
-                return null;
-            }
-        });
+    public TreadmillBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
+        super(context);
+        this.model = new TreadmillModel();
     }
 
     @Override
-    public RenderLayer getRenderType(TreadmillBlockEntity animatable, Identifier texture,
-                                     VertexConsumerProvider bufferSource, float partialTick) {
-        return RenderLayer.getEntityCutoutNoCull(texture);
-    }
-
-    // Suppress GeckoLib's built-in block rotation — we handle it ourselves below.
-    @Override
-    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
-    }
-
-    // Always render regardless of frustum culling — treadmills disappear
-    // when the camera is inside the constructor otherwise.
-    @Override
-    public boolean rendersOutsideBoundingBox(TreadmillBlockEntity blockEntity) {
-        return true;
+    protected DoubleBlockModel getModel(TreadmillBlockEntity blockEntity, BlockState blockState, float tickDelta) {
+        return this.model;
     }
 
     @Override
-    public void preRender(MatrixStack poseStack,
-                          TreadmillBlockEntity animatable,
-                          BakedGeoModel model, VertexConsumerProvider bufferSource,
-                          VertexConsumer buffer, boolean isReRender, float partialTick,
-                          int packedLight, int packedOverlay, int color) {
-
-        BlockState state = animatable.getCachedState();
-
-        // FRONT block renders nothing — the BACK block draws the full 2-block model.
-        if (!TreadmillBlock.isBack(state)) {
-            poseStack.scale(0f, 0f, 0f);
-            return;
-        }
-
-        // Item / inventory rendering — no world context, just center it.
-        if (!animatable.hasWorld()) {
-            poseStack.translate(0.5, 0.0, 0.5);
-            return;
-        }
-
-        Direction facing = state.get(TreadmillBlock.FACING);
-        poseStack.translate(0.5, 0.0, 0.5);
-        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-facing.asRotation()));
+    protected BlockState getDefaultState() {
+        return DEFAULT_STATE;
     }
 
     @Override
-    public float getMotionAnimThreshold(TreadmillBlockEntity animatable) {
-        return -1f;  // Negative value disables motion-based culling
+    protected ResourceLocation getTextureId() {
+        return TREADMILL_TEXTURE_ID;
     }
 }

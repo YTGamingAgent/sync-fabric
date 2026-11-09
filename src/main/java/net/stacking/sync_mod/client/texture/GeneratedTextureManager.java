@@ -1,48 +1,43 @@
 package net.stacking.sync_mod.client.texture;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.ResourceLocation;
+import net.stacking.sync_mod.util.IdUtil;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+/**
+ * Registers textures produced by {@link TextureGenerator}s, once, the first time they're needed.
+ * Must be used from the render thread.
+ */
 @Environment(EnvType.CLIENT)
 public final class GeneratedTextureManager {
-    private static final Map<TextureGenerator, Identifier> CACHE = new HashMap<>();
-    private static int textureCounter = 0;
+    private static final Map<TextureGenerator, ResourceLocation[]> GENERATED_TEXTURES = new HashMap<>();
 
-    public static void clearCache() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        CACHE.values().forEach(client.getTextureManager()::destroyTexture);
-        CACHE.clear();
+    public static ResourceLocation[] getTextures(TextureGenerator generator) {
+        return GENERATED_TEXTURES.computeIfAbsent(generator, x -> register(x, GENERATED_TEXTURES.size()));
     }
 
-    public static Identifier getOrCreate(int width, int height, TextureGenerator generator) {
-        return getOrCreate(String.format("%sx%s", width, height), width, height, generator);
-    }
-
-    public static Identifier getOrCreate(String format, int width, int height, TextureGenerator generator) {
-        return CACHE.computeIfAbsent(generator, x -> {
-            Identifier id = Identifier.of("__dynamic", format + (++textureCounter));
-            NativeImage image = new NativeImage(width, height, true);
-            generator.generate(image);
-            MinecraftClient.getInstance().getTextureManager().registerTexture(id, new NativeImageBackedTexture(image));
-            return id;
-        });
-    }
-
-    /**
-     * Compatibility helper for shader mods that expect an array of generated textures.
-     *
-     * The original Sync client generated multiple variants; for modern versions we
-     * generate a single texture and return it as a 1-element array.
-     */
-    public static Identifier[] getTextures(TextureGenerator generator) {
-        return new Identifier[] { getOrCreate(64, 64, generator) };
+    private static ResourceLocation[] register(TextureGenerator generator, int generatorId) {
+        List<NativeImage> images = generator.generateImages();
+        ResourceLocation[] ids = new ResourceLocation[images.size()];
+        for (int i = 0; i < ids.length; ++i) {
+            ResourceLocation id = IdUtil.of("sync", "dynamic/generated_" + generatorId + "_" + i);
+            NativeImage image = images.get(i);
+            //? if >=1.21.5 {
+            /*DynamicTexture texture = new DynamicTexture(id::toString, image);
+            *///?} else
+            DynamicTexture texture = new DynamicTexture(image);
+            Minecraft.getInstance().getTextureManager().register(id, texture);
+            ids[i] = id;
+        }
+        return ids;
     }
 
     private GeneratedTextureManager() { }

@@ -1,272 +1,326 @@
 package net.stacking.sync_mod.block;
 
+import net.stacking.sync_mod.util.EntityUtil;
+
+//? if >=1.21.2 {
+/*import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ScheduledTickAccess;
+*///?}
+
+//? if >=1.20.3
 import com.mojang.serialization.MapCodec;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.pathing.NavigationType;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.StringIdentifiable;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.WorldAccess;
 import net.stacking.sync_mod.block.entity.SyncBlockEntities;
+import net.stacking.sync_mod.block.entity.TickableBlockEntity;
 import net.stacking.sync_mod.block.entity.TreadmillBlockEntity;
+import net.minecraft.world.level.block.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.StringRepresentable;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.LevelEvent;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.pathfinder.PathComputationType;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
-
 @SuppressWarnings("deprecation")
-public class TreadmillBlock extends HorizontalFacingBlock implements BlockEntityProvider {
+public class TreadmillBlock extends HorizontalDirectionalBlock implements EntityBlock {
+    //? if >=1.20.3
+    public static final MapCodec<TreadmillBlock> CODEC = simpleCodec(TreadmillBlock::new);
+    public static final EnumProperty<Part> PART = EnumProperty.create("treadmill_part", Part.class);
 
-    public static final MapCodec<TreadmillBlock> CODEC = createCodec(TreadmillBlock::new);
-    public static final EnumProperty<Part> PART = EnumProperty.of("treadmill_part", Part.class);
+    /** Same range as a vanilla lead. */
+    private static final double LEASHED_MOB_SEARCH_RADIUS = 10;
 
-    private static final VoxelShape COL_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
-    private static final VoxelShape COL_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
+    private static final VoxelShape NORTH_SHAPE_BACK;
+    private static final VoxelShape NORTH_SHAPE_FRONT;
+    private static final VoxelShape SOUTH_SHAPE_BACK;
+    private static final VoxelShape SOUTH_SHAPE_FRONT;
+    private static final VoxelShape EAST_SHAPE_BACK;
+    private static final VoxelShape EAST_SHAPE_FRONT;
+    private static final VoxelShape WEST_SHAPE_BACK;
+    private static final VoxelShape WEST_SHAPE_FRONT;
 
-    private static final VoxelShape OUTLINE_BACK_SOUTH = VoxelShapes.union(
-            Block.createCuboidShape(1, 0, 0, 15, 8, 16),
-            Block.createCuboidShape(1, 8, 0, 15, 16, 3));
-    private static final VoxelShape OUTLINE_BACK_NORTH = VoxelShapes.union(
-            Block.createCuboidShape(1, 0, 0, 15, 8, 16),
-            Block.createCuboidShape(1, 8, 13, 15, 16, 16));
-    private static final VoxelShape OUTLINE_BACK_EAST = VoxelShapes.union(
-            Block.createCuboidShape(0, 0, 1, 16, 8, 15),
-            Block.createCuboidShape(0, 8, 1, 3, 16, 15));
-    private static final VoxelShape OUTLINE_BACK_WEST = VoxelShapes.union(
-            Block.createCuboidShape(0, 0, 1, 16, 8, 15),
-            Block.createCuboidShape(13, 8, 1, 16, 16, 15));
-
-    private static final VoxelShape OUTLINE_FRONT_NS = Block.createCuboidShape(1, 0, 0, 15, 8, 16);
-    private static final VoxelShape OUTLINE_FRONT_EW = Block.createCuboidShape(0, 0, 1, 16, 8, 15);
-
-    public TreadmillBlock(Settings settings) {
+    public TreadmillBlock(Properties settings) {
         super(settings);
-        this.setDefaultState(this.stateManager.getDefaultState()
-                .with(FACING, Direction.NORTH)
-                .with(PART, Part.BACK));
+        this.registerDefaultState(this.stateDefinition.any().setValue(PART, Part.BACK));
     }
 
+    //? if >=1.20.3 {
     @Override
-    protected MapCodec<TreadmillBlock> getCodec() { return CODEC; }
+    public MapCodec<? extends HorizontalDirectionalBlock> codec() {
+        return CODEC;
+    }
+    //?}
 
     public static boolean isBack(BlockState state) {
-        return state.get(PART) == Part.BACK;
+        return state.getValue(PART) == Part.BACK;
     }
 
-    public static Direction getDirectionTowardsOtherPart(Part part, Direction facing) {
-        return part == Part.BACK ? facing : facing.getOpposite();
+    public static DoubleBlockCombiner.BlockType getTreadmillPart(BlockState state) {
+        return isBack(state) ? DoubleBlockCombiner.BlockType.FIRST : DoubleBlockCombiner.BlockType.SECOND;
     }
 
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new TreadmillBlockEntity(pos, state);
     }
 
     @Override
-    protected BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.ENTITYBLOCK_ANIMATED;
+    public RenderShape getRenderShape(BlockState state) {
+        //? if >=1.21.4 {
+        /*return RenderShape.INVISIBLE;
+        *///?} else
+        return RenderShape.ENTITYBLOCK_ANIMATED;
     }
 
     @Override
-    protected VoxelShape getOutlineShape(BlockState state, BlockView world,
-                                         BlockPos pos, ShapeContext context) {
-        Direction facing = state.get(FACING);
-        if (state.get(PART) == Part.BACK) {
-            return switch (facing) {
-                case SOUTH -> OUTLINE_BACK_SOUTH;
-                case NORTH -> OUTLINE_BACK_NORTH;
-                case EAST  -> OUTLINE_BACK_EAST;
-                case WEST  -> OUTLINE_BACK_WEST;
-                default    -> OUTLINE_BACK_SOUTH;
-            };
-        }
-        return (facing == Direction.EAST || facing == Direction.WEST)
-                ? OUTLINE_FRONT_EW : OUTLINE_FRONT_NS;
-    }
-
-    @Override
-    protected VoxelShape getCollisionShape(BlockState state, BlockView world,
-                                           BlockPos pos, ShapeContext context) {
-        Direction facing = state.get(FACING);
-        return (facing == Direction.EAST || facing == Direction.WEST) ? COL_EW : COL_NS;
-    }
-
-    @Override
-    @Nullable
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        Direction facing = ctx.getHorizontalPlayerFacing().getOpposite();
-        BlockPos pos     = ctx.getBlockPos();
-        BlockPos front   = pos.offset(facing);
-        World world      = ctx.getWorld();
-        if (!world.getBlockState(front).canReplace(ctx)) return null;
-        return this.getDefaultState()
-                .with(FACING, facing)
-                .with(PART, Part.BACK);
-    }
-
-    @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state,
-                         @Nullable LivingEntity placer, ItemStack stack) {
-        world.setBlockState(pos.offset(state.get(FACING)),
-                state.with(PART, Part.FRONT), 3);
-    }
-
-    @Override
-    public BlockState getStateForNeighborUpdate(BlockState state, Direction direction,
-                                                BlockState neighborState, WorldAccess world,
-                                                BlockPos pos, BlockPos neighborPos) {
-        if (direction == getDirectionTowardsOtherPart(state.get(PART), state.get(FACING))) {
-            return neighborState.isOf(this) && neighborState.get(PART) != state.get(PART)
-                    ? state
-                    : Blocks.AIR.getDefaultState();
-        }
-        return super.getStateForNeighborUpdate(state, direction, neighborState, world, pos, neighborPos);
-    }
-
-    @Override
-    public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
-        if (!world.isClient) {
-            BlockPos other = pos.offset(
-                    getDirectionTowardsOtherPart(state.get(PART), state.get(FACING)));
-            BlockState otherState = world.getBlockState(other);
-            if (otherState.isOf(this) && otherState.get(PART) != state.get(PART)) {
-                world.setBlockState(other, Blocks.AIR.getDefaultState(),
-                        Block.NOTIFY_ALL | Block.SKIP_DROPS);
-            }
-        }
-        return super.onBreak(world, pos, state, player);
-    }
-
-    @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos,
-                                 PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient) return ActionResult.SUCCESS;
-
-        Direction facing = state.get(FACING);
-        Part      part   = state.get(PART);
-        BlockPos  backPos  = (part == Part.BACK) ? pos : pos.offset(facing.getOpposite());
-        BlockState backState = world.getBlockState(backPos);
-        BlockEntity be = world.getBlockEntity(backPos);
-        if (!(be instanceof TreadmillBlockEntity treadmill)) return ActionResult.PASS;
-
-        Box search = new Box(backPos).expand(10.0);
-        List<MobEntity> mobs = world.getEntitiesByClass(
-                MobEntity.class, search,
-                m -> m.isLeashed()
-                        && m.getLeashHolder() instanceof PlayerEntity lp
-                        && lp.getUuid().equals(player.getUuid()));
-        if (mobs.isEmpty()) return ActionResult.PASS;
-
-        MobEntity mob = mobs.get(0);
-
-        // Place mob at the boundary between BACK and FRONT blocks.
-        // This matches computeTreadmillPivot exactly so onSteppedOn
-        // accepts it immediately. The pig's body straddles the seam,
-        // putting its snout into the BACK block at the console panel.
-        double x = switch (facing) {
-            case WEST -> backPos.getX();
-            case EAST -> backPos.getX() + 1.0;
-            default   -> backPos.getX() + 0.5;
-        };
-        double y = backPos.getY() + 0.175;
-        double z = switch (facing) {
-            case SOUTH -> backPos.getZ() + 1.0;
-            case NORTH -> backPos.getZ();
-            default    -> backPos.getZ() + 0.5;
-        };
-
-        // facing.getOpposite() = pig looks TOWARD the console (into BACK block).
-        float yaw = facing.getOpposite().asRotation();
-        mob.updatePositionAndAngles(x, y, z, yaw, 0);
-        mob.detachLeash(true, false);
-        if (!player.isCreative()) {
-            player.getInventory().insertStack(new ItemStack(Items.LEAD));
-        }
-        treadmill.onSteppedOn(backPos, backState, mob);
-        return ActionResult.SUCCESS;
-    }
-
-    @Override
-    @Environment(EnvType.CLIENT)
-    public void randomDisplayTick(BlockState state, World world, BlockPos pos, Random random) {
-        Part      part   = state.get(PART);
-        Direction facing = state.get(FACING);
-        BlockEntity first  = world.getBlockEntity(pos);
-        BlockEntity second = world.getBlockEntity(
-                pos.offset(getDirectionTowardsOtherPart(part, facing)));
-        if (!(first  instanceof TreadmillBlockEntity firstT)
-                || !(second instanceof TreadmillBlockEntity secondT)) return;
-
-        TreadmillBlockEntity back  = (part == Part.BACK) ? firstT  : secondT;
-        TreadmillBlockEntity front = (part == Part.BACK) ? secondT : firstT;
-
-        if (back.isOverheated()) {
-            double x = front.getPos().getX() + random.nextDouble();
-            double y = front.getPos().getY() + 0.4;
-            double z = front.getPos().getZ() + random.nextDouble();
-            world.addParticle(ParticleTypes.LARGE_SMOKE, x, y, z, 0, 0.1, 0);
-        }
-    }
-
-    @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+    public void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING, PART);
     }
 
     @Override
-    protected boolean canPathfindThrough(BlockState state, NavigationType type) {
+    //? if >=1.21.2 {
+    /*public BlockState updateShape(BlockState state, LevelReader world, ScheduledTickAccess tickAccess, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, RandomSource random) {
+    *///?} else
+    public BlockState updateShape(BlockState state, Direction direction, BlockState neighborState, LevelAccessor world, BlockPos pos, BlockPos neighborPos) {
+        if (direction == getDirectionTowardsOtherPart(state.getValue(PART), state.getValue(FACING))) {
+            return neighborState.is(this) && neighborState.getValue(PART) != state.getValue(PART) ? state : Blocks.AIR.defaultBlockState();
+        }
+        //? if >=1.21.2 {
+        /*return super.updateShape(state, world, tickAccess, pos, direction, neighborPos, neighborState, random);
+        *///?} else
+        return super.updateShape(state, direction, neighborState, world, pos, neighborPos);
+    }
+
+    @Override
+    @Nullable
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        Direction direction = ctx.getHorizontalDirection();
+        BlockPos blockPos = ctx.getClickedPos();
+        BlockPos blockPos2 = blockPos.relative(direction);
+        return ctx.getLevel().getBlockState(blockPos2).canBeReplaced(ctx) ? this.defaultBlockState().setValue(FACING, direction) : null;
+    }
+
+    @Override
+    public void setPlacedBy(Level world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
+        super.setPlacedBy(world, pos, state, placer, itemStack);
+        if (!world.isClientSide()) {
+            BlockPos blockPos = pos.relative(state.getValue(FACING));
+            world.setBlock(blockPos, state.setValue(PART, Part.FRONT), Block.UPDATE_ALL);
+            //? if >=1.21.5 {
+            /*world.updateNeighborsAt(pos, Blocks.AIR, null);
+            *///?} else
+            world.blockUpdated(pos, Blocks.AIR);
+            state.updateNeighbourShapes(world, pos, Block.UPDATE_ALL);
+        }
+    }
+
+    @Override
+    //? if >=1.20.3 {
+    public BlockState playerWillDestroy(Level world, BlockPos pos, BlockState state, Player player) {
+    //?} else
+    /*public void playerWillDestroy(Level world, BlockPos pos, BlockState state, Player player) {*/
+        if (!world.isClientSide() && player.isCreative()) {
+            // Same as vanilla beds: in creative, breaking the front part must not drop the back part.
+            Part part = state.getValue(PART);
+            if (part == Part.FRONT) {
+                BlockPos blockPos = pos.relative(getDirectionTowardsOtherPart(part, state.getValue(FACING)));
+                BlockState blockState = world.getBlockState(blockPos);
+                if (blockState.getBlock() == this && blockState.getValue(PART) == Part.BACK) {
+                    world.setBlock(blockPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL | Block.UPDATE_SUPPRESS_DROPS);
+                    world.levelEvent(player, LevelEvent.PARTICLES_DESTROY_BLOCK, blockPos, Block.getId(blockState));
+                }
+            }
+        }
+        //? if >=1.20.3 {
+        return super.playerWillDestroy(world, pos, state, player);
+        //?} else
+        /*super.playerWillDestroy(world, pos, state, player);*/
+    }
+
+    /**
+     * Right-click a treadmill while you have a mob on a lead to put that mob on the belt
+     * (centred on the seam between the two parts, facing the console) and get the lead back.
+     */
+    //? if >=1.20.5 {
+    @Override
+    public InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+        return this.useLead(state, world, pos, player);
+    }
+    //?} else {
+    /*@Override
+    public InteractionResult use(BlockState state, Level world, BlockPos pos, Player player, net.minecraft.world.InteractionHand hand, BlockHitResult hit) {
+        return this.useLead(state, world, pos, player);
+    }
+    *///?}
+
+    private InteractionResult useLead(BlockState state, Level world, BlockPos pos, Player player) {
+        BlockPos backPos = isBack(state) ? pos : pos.relative(getDirectionTowardsOtherPart(state.getValue(PART), state.getValue(FACING)));
+        Mob mob = world.getEntitiesOfClass(Mob.class, new AABB(backPos).inflate(LEASHED_MOB_SEARCH_RADIUS), x -> x.isLeashed() && x.getLeashHolder() == player)
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (mob == null) {
+            return InteractionResult.PASS;
+        }
+        if (world.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        if (!(world.getBlockEntity(backPos) instanceof TreadmillBlockEntity treadmill) || treadmill.isRunning()) {
+            return InteractionResult.PASS;
+        }
+
+        Direction facing = state.getValue(FACING);
+        Vec3 pivot = TreadmillBlockEntity.computeTreadmillPivot(backPos, facing);
+        //? if >=1.21.4 {
+        /*mob.removeLeash();
+        *///?} else
+        mob.dropLeash(true, false);
+        EntityUtil.moveTo(mob, pivot.x, pivot.y, pivot.z, facing.toYRot(), 0);
+        if (!player.isCreative()) {
+            ItemStack lead = new ItemStack(Items.LEAD);
+            if (!player.addItem(lead)) {
+                player.drop(lead, false);
+            }
+        }
+        treadmill.onSteppedOn(backPos, world.getBlockState(backPos), mob);
+        return InteractionResult.SUCCESS;
+    }
+
+    @Override
+    //? if >=1.20.5 {
+    public boolean isPathfindable(BlockState state, PathComputationType type) {
+    //?} else
+    /*public boolean isPathfindable(BlockState state, BlockGetter world, BlockPos pos, PathComputationType type) {*/
         return true;
     }
 
     @Override
-    public void onSteppedOn(World world, BlockPos pos, BlockState state, Entity entity) {
-        if (!world.isClient && world.getBlockEntity(pos) instanceof TreadmillBlockEntity t) {
-            t.onSteppedOn(pos, state, entity);
+    public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
+        Direction direction = state.getValue(FACING);
+        boolean isBack = isBack(state);
+
+        return switch (direction) {
+            case NORTH -> isBack ? NORTH_SHAPE_BACK : NORTH_SHAPE_FRONT;
+            case SOUTH -> isBack ? SOUTH_SHAPE_BACK : SOUTH_SHAPE_FRONT;
+            case EAST -> isBack ? EAST_SHAPE_BACK : EAST_SHAPE_FRONT;
+            case WEST -> isBack ? WEST_SHAPE_BACK : WEST_SHAPE_FRONT;
+            default -> NORTH_SHAPE_FRONT;
+        };
+    }
+
+    @Override
+    public void stepOn(Level world, BlockPos pos, BlockState state, Entity entity) {
+        if (!world.isClientSide() && world.getBlockEntity(pos) instanceof TreadmillBlockEntity treadmillBlockEntity) {
+            treadmillBlockEntity.onSteppedOn(pos, state, entity);
         }
     }
 
     @Override
     @Nullable
-    @SuppressWarnings("unchecked")
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
-            World world, BlockState state, BlockEntityType<T> type) {
-        if (!isBack(state)) return null;
-        if (type != SyncBlockEntities.TREADMILL) return null;
-        return (BlockEntityTicker<T>) (BlockEntityTicker<TreadmillBlockEntity>)
-                (w, pos, st, be) -> {
-                    if (w.isClient) be.onClientTick(w, pos, st);
-                    else            be.onServerTick(w, pos, st);
-                };
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+        if (type != SyncBlockEntities.TREADMILL || !isBack(state)) {
+            return null;
+        }
+
+        return world.isClientSide() ? TickableBlockEntity::clientTicker : TickableBlockEntity::serverTicker;
     }
 
-    public enum Part implements StringIdentifiable {
-        FRONT("front"), BACK("back");
+    public static Direction getDirectionTowardsOtherPart(Part part, Direction direction) {
+        return part == Part.BACK ? direction : direction.getOpposite();
+    }
+
+    public enum Part implements StringRepresentable {
+        FRONT("front"),
+        BACK("back");
+
         private final String name;
-        Part(String name) { this.name = name; }
-        @Override public String toString()  { return name; }
-        @Override public String asString()  { return name; }
+
+        Part(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String toString() {
+            return this.name;
+        }
+
+        @Override
+        public String getSerializedName() {
+            return this.name;
+        }
+    }
+
+    static {
+        final VoxelShape TRACK_NORTH_SOUTH = Block.box(1.5, 0, 0, 14.5, 4, 16);
+        final VoxelShape TRACK_EAST_WEST = Block.box(0, 0, 1.5, 16, 4, 14.5);
+
+        final VoxelShape LEFT_SIDE_GUARD_NORTH_BACK = Block.box(1.5, 0, 0, 1.6, 8.3, 7.4);
+        final VoxelShape RIGHT_SIDE_GUARD_NORTH_BACK = Block.box(14.4, 0, 0, 14.5, 8.3, 7.4);
+
+        final VoxelShape LEFT_SIDE_GUARD_NORTH_FRONT = Block.box(1.5, 0, 7.5, 1.6, 8.7, 16);
+        final VoxelShape RIGHT_SIDE_GUARD_NORTH_FRONT = Block.box(14.4, 0, 7.5, 14.5, 8.7, 16);
+        final VoxelShape DASHBOARD_NORTH_FRONT = Block.box(1.5, 0, 2, 14.5, 8.5, 3);
+
+        final VoxelShape LEFT_SIDE_GUARD_SOUTH_BACK = Block.box(1.5, 0, 8.6, 1.6, 8.3, 16);
+        final VoxelShape RIGHT_SIDE_GUARD_SOUTH_BACK = Block.box(14.4, 0, 8.6, 14.5, 8.3, 16);
+
+        final VoxelShape LEFT_SIDE_GUARD_SOUTH_FRONT = Block.box(1.5, 0, 0, 1.6, 8.7, 8.5);
+        final VoxelShape RIGHT_SIDE_GUARD_SOUTH_FRONT = Block.box(14.4, 0, 0, 14.5, 8.7, 8.5);
+        final VoxelShape DASHBOARD_SOUTH_FRONT = Block.box(1.5, 0, 13, 14.5, 8.5, 14);
+
+        final VoxelShape LEFT_SIDE_GUARD_EAST_BACK = Block.box(8.6, 0, 1.5, 16, 8.3, 1.6);
+        final VoxelShape RIGHT_SIDE_GUARD_EAST_BACK = Block.box(8.6, 0, 14.4, 16, 8.3, 14.5);
+
+        final VoxelShape LEFT_SIDE_GUARD_EAST_FRONT = Block.box(0, 0, 1.5, 8.5, 8.7, 1.6);
+        final VoxelShape RIGHT_SIDE_GUARD_EAST_FRONT = Block.box(0, 0, 14.4, 8.5, 8.7, 14.5);
+        final VoxelShape DASHBOARD_EAST_FRONT = Block.box(13, 0, 1.5, 14, 8.5, 14.5);
+
+        final VoxelShape LEFT_SIDE_GUARD_WEST_BACK = Block.box(0, 0, 1.5, 7.4, 8.3, 1.6);
+        final VoxelShape RIGHT_SIDE_GUARD_WEST_BACK = Block.box(0, 0, 14.4, 7.4, 8.3, 14.5);
+
+        final VoxelShape LEFT_SIDE_GUARD_WEST_FRONT = Block.box(7.5, 0, 1.5, 16, 8.7, 1.6);
+        final VoxelShape RIGHT_SIDE_GUARD_WEST_FRONT = Block.box(7.5, 0, 14.4, 16, 8.7, 14.5);
+        final VoxelShape DASHBOARD_WEST_FRONT = Block.box(2, 0, 1.5, 3, 8.5, 14.5);
+
+        NORTH_SHAPE_BACK = Shapes.or(TRACK_NORTH_SOUTH, LEFT_SIDE_GUARD_NORTH_BACK, RIGHT_SIDE_GUARD_NORTH_BACK).optimize();
+        NORTH_SHAPE_FRONT = Shapes.or(TRACK_NORTH_SOUTH, LEFT_SIDE_GUARD_NORTH_FRONT, RIGHT_SIDE_GUARD_NORTH_FRONT, DASHBOARD_NORTH_FRONT).optimize();
+
+        SOUTH_SHAPE_BACK = Shapes.or(TRACK_NORTH_SOUTH, LEFT_SIDE_GUARD_SOUTH_BACK, RIGHT_SIDE_GUARD_SOUTH_BACK).optimize();
+        SOUTH_SHAPE_FRONT = Shapes.or(TRACK_NORTH_SOUTH, LEFT_SIDE_GUARD_SOUTH_FRONT, RIGHT_SIDE_GUARD_SOUTH_FRONT, DASHBOARD_SOUTH_FRONT).optimize();
+
+        EAST_SHAPE_BACK = Shapes.or(TRACK_EAST_WEST, LEFT_SIDE_GUARD_EAST_BACK, RIGHT_SIDE_GUARD_EAST_BACK).optimize();
+        EAST_SHAPE_FRONT = Shapes.or(TRACK_EAST_WEST, LEFT_SIDE_GUARD_EAST_FRONT, RIGHT_SIDE_GUARD_EAST_FRONT, DASHBOARD_EAST_FRONT).optimize();
+
+        WEST_SHAPE_BACK = Shapes.or(TRACK_EAST_WEST, LEFT_SIDE_GUARD_WEST_BACK, RIGHT_SIDE_GUARD_WEST_BACK).optimize();
+        WEST_SHAPE_FRONT = Shapes.or(TRACK_EAST_WEST, LEFT_SIDE_GUARD_WEST_FRONT, RIGHT_SIDE_GUARD_WEST_FRONT, DASHBOARD_WEST_FRONT).optimize();
     }
 }

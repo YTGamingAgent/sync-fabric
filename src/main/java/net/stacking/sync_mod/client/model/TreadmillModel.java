@@ -1,16 +1,16 @@
 package net.stacking.sync_mod.client.model;
 
 import net.stacking.sync_mod.util.math.Radians;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.DoubleBlockProperties;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
 
 @Environment(EnvType.CLIENT)
 public class TreadmillModel extends DoubleBlockModel {
-    private static final DoubleBlockProperties.Type BACK = DoubleBlockProperties.Type.FIRST;
-    private static final DoubleBlockProperties.Type FRONT = DoubleBlockProperties.Type.SECOND;
+    private static final DoubleBlockCombiner.BlockType BACK = DoubleBlockCombiner.BlockType.FIRST;
+    private static final DoubleBlockCombiner.BlockType FRONT = DoubleBlockCombiner.BlockType.SECOND;
 
     public final ModelPart runningBeltF;
     public final ModelPart runningBeltB;
@@ -81,7 +81,7 @@ public class TreadmillModel extends DoubleBlockModel {
     }
 
     @Override
-    protected void translate(MatrixStack matrices) {
+    protected void translate(PoseStack matrices) {
         matrices.translate(0, 0, 2F);
     }
 }

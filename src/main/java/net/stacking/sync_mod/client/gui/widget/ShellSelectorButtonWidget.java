@@ -1,29 +1,37 @@
 package net.stacking.sync_mod.client.gui.widget;
 
+import net.stacking.sync_mod.util.ChatUtil;
+
+import net.stacking.sync_mod.util.client.render.PoseUtil;
+
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
+//? if <1.21.2
 import net.stacking.sync_mod.client.gl.MSAAFramebuffer;
-import net.stacking.sync_mod.client.render.MatrixStackStorage;
 import net.stacking.sync_mod.util.client.render.ColorUtil;
 import net.stacking.sync_mod.util.client.render.RenderSystemUtil;
 import net.stacking.sync_mod.api.shell.ClientShell;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.api.event.PlayerSyncEvents;
 import net.stacking.sync_mod.entity.ShellEntity;
+import net.stacking.sync_mod.client.render.entity.ShellEntityRenderer;
 import net.stacking.sync_mod.util.math.Radians;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.entity.EntityRenderDispatcher;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.stacking.sync_mod.client.gui.GuiContext;
+//? if <26.2
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.DyeColor;
+//? if >=1.19.3 {
 import org.joml.Vector3f;
+//?} else
+/*import com.mojang.math.Vector3f;*/
 
 import java.util.function.BiPredicate;
 
@@ -115,24 +123,29 @@ public class ShellSelectorButtonWidget extends AbstractWidget {
         return this.shell != null && liesOnCircle(mouseX, mouseY, this.cX, this.cY, this.majorR) && !liesOnCircle(mouseX, mouseY, this.cX, this.cY, this.minorR) && this.belongsToSectorPredicate.test(mouseX, mouseY);
     }
 
+    //? if >=1.19.4
     @Override
     public void setFocused(boolean focused) {
 
     }
 
+    //? if >=1.19.4
     @Override
     public boolean isFocused() {
         return false;
     }
 
     @Override
-    protected void renderContent(DrawContext drawContext, int mouseX, int mouseY, float delta) {
-        this.renderSector(drawContext.getMatrices());
+    protected void renderContent(GuiContext drawContext, int mouseX, int mouseY, float delta) {
+        this.renderSector(drawContext);
 
         if (this.shell != null) {
             if (this.shell.getProgress() < ShellState.PROGRESS_PRINTING) {
                 this.renderShellAndProgress(drawContext);
             } else {
+                //? if >=1.21.2 {
+                /*this.renderShellAndProgress(drawContext);
+                *///?} else
                 MSAAFramebuffer.renderAfterUsage(() -> this.renderShellAndProgress(drawContext));
             }
         }
@@ -140,41 +153,41 @@ public class ShellSelectorButtonWidget extends AbstractWidget {
 
     @Override
     protected void onMouseClick(double mouseX, double mouseY, int button) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player == null || this.shell == null || this.shell.getProgress() < ShellState.PROGRESS_DONE) {
             return;
         }
 
         PlayerSyncEvents.SyncFailureReason failureReason = ((ClientShell) client.player).beginSync(this.shell);
         if (failureReason != null) {
-            if (client.currentScreen != null) {
-                client.currentScreen.close();
+            if (client.screen != null) {
+                client.screen.onClose();
             }
-            client.player.sendMessage(failureReason.toText(), true);
+            ChatUtil.message(client.player, failureReason.toText(), true);
         }
     }
 
-    private void renderSector(MatrixStack matrices) {
+    private void renderSector(GuiContext drawContext) {
         float alpha = this.isPressed() ? this.pressedAlpha : this.isHovered() ? this.hoveredAlpha : this.alpha;
         DyeColor borderColor = this.shell == null ? null : this.shell.getColor();
         DyeColor color = borderColor != null && (this.isHovered() || this.isPressed()) ? borderColor : this.color;
         float[] rgb = net.stacking.sync_mod.util.client.render.ColorUtil.getColorComponents(color);
-        RenderSystemUtil.drawAnnulusSector(matrices, this.cX, this.cY, this.majorR, this.minorR, this.from, this.to, this.step, rgb[0], rgb[1], rgb[2], alpha);
+        RenderSystemUtil.drawAnnulusSector(drawContext, this.cX, this.cY, this.majorR, this.minorR, this.from, this.to, this.step, rgb[0], rgb[1], rgb[2], alpha);
 
         if (borderColor != null) {
             rgb = net.stacking.sync_mod.util.client.render.ColorUtil.getColorComponents(borderColor);
-            RenderSystemUtil.drawAnnulusSector(matrices, this.cX, this.cY, this.majorR, this.minorRBorder, this.from, this.to, this.step, rgb[0], rgb[1], rgb[2], 1F);
+            RenderSystemUtil.drawAnnulusSector(drawContext, this.cX, this.cY, this.majorR, this.minorRBorder, this.from, this.to, this.step, rgb[0], rgb[1], rgb[2], 1F);
         }
     }
 
-    private void renderShellAndProgress(DrawContext drawContext) {
+    private void renderShellAndProgress(GuiContext drawContext) {
         this.renderShell(drawContext);
         if (this.shell.getProgress() < ShellState.PROGRESS_DONE) {
             this.renderProgress(drawContext);
         }
     }
 
-    private void renderShell(DrawContext drawContext) {
+    private void renderShell(GuiContext drawContext) {
         final double SHELL_WIDTH_HALF = 0.26F;
         final double SHELL_HEIGHT_HALF = 0.35F;
         final float SHELL_SCALE = 0.365F;
@@ -191,65 +204,70 @@ public class ShellSelectorButtonWidget extends AbstractWidget {
         double tY = shellCY + this.diffR * SHELL_HEIGHT_HALF;
         float scale = (float)this.diffR * SHELL_SCALE;
 
-        MatrixStack matrices = drawContext.getMatrices();
+        //? if >=1.21.6 {
+        /*// Since 1.21.6 entities in GUIs are drawn by a picture-in-picture renderer into a box.
+        int boxSize = (int)this.diffR;
+        int x0 = (int)(shellCX - boxSize / 2.0), y0 = (int)(shellCY - boxSize / 2.0);
+        ShellEntityRenderer.submitShellToGui(drawContext.graphics(), shellEntity, x0, y0, x0 + boxSize, y0 + boxSize, scale);
+        *///?} else {
+        PoseStack matrices = drawContext.pose();
 
-        matrices.push();
+        matrices.pushPose();
         matrices.translate(tX, tY, this.majorR);
         matrices.scale(scale, -scale, 1F);
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(15));
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(40));
+        PoseUtil.rotateXDegrees(matrices, 15);
+        PoseUtil.rotateYDegrees(matrices, 40);
 
         RenderSystem.setupGui3DDiffuseLighting(new Vector3f((float)this.cX * 2, (float)this.cY * 2, -1), new Vector3f(0, 0, 1));
-        MatrixStackStorage.saveModelMatrixStack(matrices);
-        VertexConsumerProvider.Immediate immediate = RenderSystemUtil.getEntityVertexConsumerProvider();
-        EntityRenderDispatcher renderDispatcher = MinecraftClient.getInstance().getEntityRenderDispatcher();
-        renderDispatcher.render(shellEntity, 0, 0, 0, 0,0, matrices, immediate, RenderSystemUtil.MAX_LIGHT_LEVEL);
-        immediate.draw();
+        MultiBufferSource.BufferSource immediate = RenderSystemUtil.getEntityVertexConsumerProvider();
+        ShellEntityRenderer.renderShell(shellEntity, 0, 0, matrices, immediate, RenderSystemUtil.MAX_LIGHT_LEVEL);
+        immediate.endBatch();
 
-        matrices.pop();
+        matrices.popPose();
+        //?}
     }
 
-    private void renderProgress(DrawContext drawContext) {
+    private void renderProgress(GuiContext drawContext) {
         final float FONT_SCALE = 0.15F;
         final float BOX_SCALE = 1.6F;
 
-        TextRenderer textRenderer = RenderSystemUtil.getTextRenderer();
+        Font textRenderer = RenderSystemUtil.getTextRenderer();
         double r = this.minorR + this.diffR / 2;
         double tAngle = (this.to + this.from) / 2;
         float shellCX = (float)(r * Math.cos(tAngle) + this.cX);
         float shellCY = (float)(r * Math.sin(tAngle) + this.cY);
         float fontHeight = (float)this.diffR * FONT_SCALE;
-        float fontScale = fontHeight / textRenderer.fontHeight;
+        float fontScale = fontHeight / textRenderer.lineHeight;
 
         int progress = (int)Math.floor(this.shell.getProgress() * 100);
-        Text progressText = Text.of(String.format("%s%%", progress));
+        Component progressText = Component.nullToEmpty(String.format("%s%%", progress));
         float boxHeight = fontHeight * BOX_SCALE;
-        float progressTextWidth = textRenderer.getWidth(progressText) * fontScale;
+        float progressTextWidth = textRenderer.width(progressText) * fontScale;
         float progressBoxWidth = Math.max(boxHeight * 2F, progressTextWidth);
-        float boxTop = shellCY - boxHeight / 2 - textRenderer.fontHeight * fontScale * 0.125F;
+        float boxTop = shellCY - boxHeight / 2 - textRenderer.lineHeight * fontScale * 0.125F;
         float boxLeft = shellCX - progressBoxWidth / 2F;
 
-        MatrixStack matrices = drawContext.getMatrices();
+        PoseStack matrices = drawContext.pose();
 
-        matrices.push();
+        matrices.pushPose();
         matrices.translate(0, 0, this.majorR * 2);
-        RenderSystemUtil.drawRectangle(matrices, boxLeft, boxTop, progressBoxWidth, boxHeight, boxHeight * 0.25F, 1F, 0, (float)this.step, 0F, 0F, 0F, 0.8F);
+        RenderSystemUtil.drawRectangle(drawContext, boxLeft, boxTop, progressBoxWidth, boxHeight, boxHeight * 0.25F, 1F, 0, (float)this.step, 0F, 0F, 0F, 0.8F);
         RenderSystemUtil.drawCenteredText(drawContext, progressText, shellCX, shellCY, fontScale, ColorUtil.fromDyeColor(DyeColor.WHITE), true);
-        matrices.pop();
+        matrices.popPose();
     }
 
     @Override
-    protected Text getWidgetDescription() {
+    protected Component getWidgetDescription() {
         if (this.shell == null) {
             return null;
         }
 
         BlockPos pos = this.shell.getPos();
-        return Text.of(String.format("%s, %s, %s", pos.getX(), pos.getY(), pos.getZ()));
+        return Component.nullToEmpty(String.format("%s, %s, %s", pos.getX(), pos.getY(), pos.getZ()));
     }
 
     private static boolean liesOnCircle(double x, double y, double cX, double cY, double r) {
-        return MathHelper.square(cX - x) + MathHelper.square(cY - y) <= r * r;
+        return Mth.square(cX - x) + Mth.square(cY - y) <= r * r;
     }
 
     private static boolean liesOnOrAboveLine(double x, double y, double a, double b) {

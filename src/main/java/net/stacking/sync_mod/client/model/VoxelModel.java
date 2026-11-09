@@ -2,26 +2,27 @@ package net.stacking.sync_mod.client.model;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.model.Model;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.entity.model.AnimalModel;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Pair;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
+import net.stacking.sync_mod.util.Tuple;
 import net.stacking.sync_mod.client.render.CustomRenderLayer;
 import net.stacking.sync_mod.util.client.render.ModelUtil;
 import net.stacking.sync_mod.util.math.Voxel;
+//? if >=1.19.3 {
 import org.joml.Vector3f;
-
+//?} else
+/*import com.mojang.math.Vector3f;*/
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 @Environment(EnvType.CLIENT)
-public class VoxelModel extends Model {
+public class VoxelModel {
     public float completeness;
     public float destructionProgress;
 
@@ -38,21 +39,20 @@ public class VoxelModel extends Model {
     private final Random random;
 
     private VoxelModel(Stream<Voxel> voxels, boolean isUpsideDown, long seed) {
-        super(id -> CustomRenderLayer.getVoxels());
         this.completeness = 0;
         this.voxels = voxels.collect(Collectors.toList());
 
         this.voxel = new ModelPart(
-                List.of(new ModelPart.Cuboid(
-                        0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, true, 1, 1,
-                        Arrays.stream(Direction.values()).collect(Collectors.toSet())
+                List.of(new ModelPart.Cube(
+                        0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, true, 1, 1
+                        /*? if >=1.19.4 {*/, Arrays.stream(Direction.values()).collect(Collectors.toSet())/*?}*/
                 )),
                 Map.of()
         );
 
-        Pair<Vector3f, Vector3f> pivotAndSize = computePivotAndSize(isUpsideDown, this.voxels);
-        Vector3f pivot = pivotAndSize.getLeft();
-        Vector3f size = pivotAndSize.getRight();
+        Tuple<Vector3f, Vector3f> pivotAndSize = computePivotAndSize(isUpsideDown, this.voxels);
+        Vector3f pivot = pivotAndSize.getA();
+        Vector3f size = pivotAndSize.getB();
         this.pivotX = pivot.x();
         this.pivotY = pivot.y();
         this.pivotZ = pivot.z();
@@ -64,8 +64,7 @@ public class VoxelModel extends Model {
         this.random = new Random();
     }
 
-    @Override
-    public void render(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+    public void renderModel(PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
         if (this.destructionProgress > 0) {
             this.renderWithDestruction(matrices, vertices, light, overlay, color);
         } else {
@@ -73,23 +72,23 @@ public class VoxelModel extends Model {
         }
     }
 
-    private void renderWithoutDestruction(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+    private void renderWithoutDestruction(PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
         ModelPart voxel = this.voxel;
         List<Voxel> voxels = this.voxels;
-        int size = MathHelper.clamp((int)(voxels.size() * this.completeness), 0, voxels.size());
+        int size = Mth.clamp((int)(voxels.size() * this.completeness), 0, voxels.size());
 
         for (int i = 0; i < size; ++i) {
             Voxel v = voxels.get(i);
-            voxel.setPivot(v.x, v.y, v.z);
-            voxel.render(matrices, vertices, light, overlay, color);
+            voxel.setPos(v.x, v.y, v.z);
+            ModelUtil.renderPart(voxel, matrices, vertices, light, overlay, color);
         }
     }
 
-    private void renderWithDestruction(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+    private void renderWithDestruction(PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
         Random rand = this.random;
         ModelPart voxel = this.voxel;
         List<Voxel> voxels = this.voxels;
-        int size = MathHelper.clamp((int)(voxels.size() * this.completeness), 0, voxels.size());
+        int size = Mth.clamp((int)(voxels.size() * this.completeness), 0, voxels.size());
 
         float minY = this.pivotY;
         float maxY = this.pivotY + this.sizeY;
@@ -111,15 +110,19 @@ public class VoxelModel extends Model {
 
             Voxel v = voxels.get(i);
             float x = v.x + vX * t;
-            float y = MathHelper.clamp(v.y + vY * t + g * k, minY, maxY);
+            float y = Mth.clamp(v.y + vY * t + g * k, minY, maxY);
             float z = v.z + vZ * t;
 
-            voxel.setPivot(x, y, z);
-            voxel.render(matrices, vertices, light, overlay, color);
+            voxel.setPos(x, y, z);
+            ModelUtil.renderPart(voxel, matrices, vertices, light, overlay, color);
         }
     }
 
-    public static VoxelModel fromModel(AnimalModel<?> model, Random random) {
+    public RenderType renderType() {
+        return CustomRenderLayer.getVoxels();
+    }
+
+    public static VoxelModel fromModel(Model model, Random random) {
         Stream<Voxel> voxels = model instanceof VoxelProvider voxelProvider
                 ? voxelProvider.getVoxels()
                 : extractVoxels(model);
@@ -149,18 +152,15 @@ public class VoxelModel extends Model {
         return new VoxelModel(orderedVoxels, isUpsideDown, random.nextLong());
     }
 
-    private static Stream<Voxel> extractVoxels(AnimalModel<?> model) {
-        return Stream.concat(
-                StreamSupport.stream(model.getHeadParts().spliterator(), false),
-                StreamSupport.stream(model.getBodyParts().spliterator(), false)
-        ).flatMap(ModelUtil::asVoxels);
+    private static Stream<Voxel> extractVoxels(Model model) {
+        return ModelUtil.rootParts(model).flatMap(ModelUtil::asVoxels);
     }
 
     private static Vector3f ZERO = new Vector3f(0, 0, 0);
 
-    private static Pair<Vector3f, Vector3f> computePivotAndSize(boolean isUpsideDown, List<Voxel> voxels) {
+    private static Tuple<Vector3f, Vector3f> computePivotAndSize(boolean isUpsideDown, List<Voxel> voxels) {
         if (voxels.isEmpty()) {
-            return new Pair<>(ZERO, ZERO);
+            return new Tuple<>(ZERO, ZERO);
         }
 
         float minX = Float.MAX_VALUE;
@@ -194,6 +194,6 @@ public class VoxelModel extends Model {
                 (maxZ - minZ + 1)
         );
 
-        return new Pair<>(pivot, size);
+        return new Tuple<>(pivot, size);
     }
 }

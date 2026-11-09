@@ -2,9 +2,9 @@ package net.stacking.sync_mod.api.shell;
 
 import net.stacking.sync_mod.Sync;
 import net.fabricmc.fabric.api.lookup.v1.block.BlockApiLookup;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -25,7 +25,7 @@ public interface ShellStateContainer {
      * @return The {@linkplain ShellStateContainer} available at the given position, if any; otherwise, null.
      */
     @Nullable
-    static ShellStateContainer find(World world, BlockPos pos) {
+    static ShellStateContainer find(Level world, BlockPos pos) {
         return LOOKUP.find(world, pos, null);
     }
 
@@ -37,7 +37,7 @@ public interface ShellStateContainer {
      * @return The {@linkplain ShellStateContainer} that contains the given {@linkplain ShellState}, if any; otherwise, null.
      */
     @Nullable
-    static ShellStateContainer find(World world, ShellState state) {
+    static ShellStateContainer find(Level world, ShellState state) {
         return LOOKUP.find(world, state.getPos(), state);
     }
 

@@ -2,10 +2,9 @@ package net.stacking.sync_mod.entity;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import java.util.function.Consumer;
 
 @Environment(EnvType.CLIENT)
@@ -16,14 +15,14 @@ public class PersistentCameraEntityGoal {
     public static final long MIN_PHASE_DURATION = 400;
     public static final long MAX_PHASE_DURATION = 2500;
 
-    public final Vec3d pos;
+    public final Vec3 pos;
     public final float yaw;
     public final float pitch;
     public final long delay;
     public final long duration;
     private final Consumer<PersistentCameraEntity> onTransitionFinished;
 
-    private PersistentCameraEntityGoal(Vec3d pos, float yaw, float pitch, long delay, long duration, Consumer<PersistentCameraEntity> onTransitionFinished) {
+    private PersistentCameraEntityGoal(Vec3 pos, float yaw, float pitch, long delay, long duration, Consumer<PersistentCameraEntity> onTransitionFinished) {
         this.pos = pos;
         this.yaw = yaw;
         this.pitch = pitch;
@@ -53,15 +52,15 @@ public class PersistentCameraEntityGoal {
     }
 
     public static PersistentCameraEntityGoal create(BlockPos pos, float yaw, float pitch, long delay, long duration, Consumer<PersistentCameraEntity> onTransitionFinished) {
-        Vec3d vecPos = new Vec3d(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+        Vec3 vecPos = new Vec3(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         return create(vecPos, yaw, pitch, delay, duration, onTransitionFinished);
     }
 
-    public static PersistentCameraEntityGoal create(Vec3d pos, float yaw, float pitch, long duration) {
+    public static PersistentCameraEntityGoal create(Vec3 pos, float yaw, float pitch, long duration) {
         return create(pos, yaw, pitch, 0, duration, null);
     }
 
-    public static PersistentCameraEntityGoal create(Vec3d pos, float yaw, float pitch, long delay, long duration, Consumer<PersistentCameraEntity> onTransitionFinished) {
+    public static PersistentCameraEntityGoal create(Vec3 pos, float yaw, float pitch, long delay, long duration, Consumer<PersistentCameraEntity> onTransitionFinished) {
         return new PersistentCameraEntityGoal(pos, yaw, pitch, delay, duration, onTransitionFinished);
     }
 
@@ -84,13 +83,13 @@ public class PersistentCameraEntityGoal {
         double horizontalDistance = Math.sqrt(dX * dX + dZ * dZ);
         if (horizontalDistance > maxDistance) {
             double factor = maxDistance / horizontalDistance;
-            target = new BlockPos(start.add((int) (dX * factor), 0, (int) (dZ * factor)));
+            target = new BlockPos(start.offset((int) (dX * factor), 0, (int) (dZ * factor)));
         }
 
-        float yaw = startFacing.asRotation();
+        float yaw = startFacing.toYRot();
         float pitch = 90;
-        BlockPos pos0 = start.offset(Direction.UP);
-        Vec3d pos1 = new Vec3d(start.getX() + target.getX(), y * 2, start.getZ() + target.getZ()).multiply(0.5);
+        BlockPos pos0 = start.relative(Direction.UP);
+        Vec3 pos1 = new Vec3(start.getX() + target.getX(), y * 2, start.getZ() + target.getZ()).scale(0.5);
 
         PersistentCameraEntityGoal goal0 = create(pos0, yaw, pitch, firstPhaseDuration);
         PersistentCameraEntityGoal goal1 = create(pos1, yaw, pitch, phaseDelay, secondPhaseDuration, onTransitionFinished);
@@ -108,13 +107,13 @@ public class PersistentCameraEntityGoal {
         double horizontalDistance = Math.sqrt(dX * dX + dZ * dZ);
         if (horizontalDistance > maxDistance) {
             double factor = maxDistance / horizontalDistance;
-            target = new BlockPos(start.add((int) (dX * factor), 0, (int) (dZ * factor)));
+            target = new BlockPos(start.offset((int) (dX * factor), 0, (int) (dZ * factor)));
         }
 
-        float yaw = startFacing.asRotation();
+        float yaw = startFacing.toYRot();
         float pitch = 90;
-        BlockPos pos0 = start.offset(startFacing.getOpposite());
-        Vec3d pos1 = new Vec3d(start.getX() + target.getX(), y * 2, start.getZ() + target.getZ()).multiply(0.5);
+        BlockPos pos0 = start.relative(startFacing.getOpposite());
+        Vec3 pos1 = new Vec3(start.getX() + target.getX(), y * 2, start.getZ() + target.getZ()).scale(0.5);
 
         PersistentCameraEntityGoal goal0 = create(pos0, yaw, 0, firstPhaseDuration);
         PersistentCameraEntityGoal goal1 = create(pos1, yaw, pitch, phaseDelay, secondPhaseDuration, onTransitionFinished);
@@ -127,19 +126,19 @@ public class PersistentCameraEntityGoal {
     }
 
     public static PersistentCameraEntityGoal highwayToHell(BlockPos start, Direction startFacing, double y, BlockPos target, Direction targetFacing, long firstPhaseDuration, long secondPhaseDuration, long phaseDelay, double maxDistance, Consumer<PersistentCameraEntity> onTransitionFinished) {
-        BlockPos pos0 = target.offset(targetFacing.getOpposite());
-        float yaw0 = targetFacing.asRotation();
-        float yaw1 = targetFacing.getOpposite().asRotation();
+        BlockPos pos0 = target.relative(targetFacing.getOpposite());
+        float yaw0 = targetFacing.toYRot();
+        float yaw1 = targetFacing.getOpposite().toYRot();
 
-        Vec3d centerPoint = new Vec3d(start.getX() + target.getX(), y * 2, start.getZ() + target.getZ()).multiply(0.5);
+        Vec3 centerPoint = new Vec3(start.getX() + target.getX(), y * 2, start.getZ() + target.getZ()).scale(0.5);
         PersistentCameraEntityGoal tpGoal = null;
         double dX = centerPoint.x - target.getX();
         double dZ = centerPoint.z - target.getZ();
         double horizontalDistance = Math.sqrt(dX * dX + dZ * dZ);
         if (horizontalDistance > maxDistance) {
             double factor = maxDistance / horizontalDistance;
-            BlockPos centerPointPos = new BlockPos(target.add((int) (dX * factor), 0, (int) (dZ * factor))).withY((int)centerPoint.y);
-            tpGoal = PersistentCameraEntityGoal.tp(centerPointPos, startFacing.asRotation(), 90);
+            BlockPos centerPointPos = new BlockPos(target.offset((int) (dX * factor), 0, (int) (dZ * factor))).atY((int)centerPoint.y);
+            tpGoal = PersistentCameraEntityGoal.tp(centerPointPos, startFacing.toYRot(), 90);
         }
 
         PersistentCameraEntityGoal goal0 = create(pos0, yaw0, 0, firstPhaseDuration);

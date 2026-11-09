@@ -1,5 +1,7 @@
 package net.stacking.sync_mod.client.render;
 
+import net.stacking.sync_mod.util.GameRegistries;
+
 import net.stacking.sync_mod.block.entity.SyncBlockEntities;
 import net.stacking.sync_mod.client.render.block.entity.ShellConstructorBlockEntityRenderer;
 import net.stacking.sync_mod.client.render.block.entity.ShellStorageBlockEntityRenderer;
@@ -7,46 +9,49 @@ import net.stacking.sync_mod.client.render.block.entity.TreadmillBlockEntityRend
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
+//? if <1.21.4
 import net.fabricmc.fabric.api.client.rendering.v1.BuiltinItemRendererRegistry;
-import net.minecraft.block.Block;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.Item;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 
 @Environment(EnvType.CLIENT)
 public final class SyncRenderers {
     public static void initClient() {
+        register(ShellStorageBlockEntityRenderer::new, SyncBlockEntities.SHELL_STORAGE);
         register(ShellConstructorBlockEntityRenderer::new, SyncBlockEntities.SHELL_CONSTRUCTOR);
-        register(ShellStorageBlockEntityRenderer::new,    SyncBlockEntities.SHELL_STORAGE);
-        register(TreadmillBlockEntityRenderer::new,       SyncBlockEntities.TREADMILL);
+        register(TreadmillBlockEntityRenderer::new, SyncBlockEntities.TREADMILL);
+        // Since 1.21.4, items are drawn through item model definitions (assets/sync/items).
+        //? if >=1.21.4
+        /*net.stacking.sync_mod.client.render.item.BlockEntityItemRenderer.register();*/
     }
 
-    private static <E extends BlockEntity> void register(
-            net.minecraft.client.render.block.entity.BlockEntityRendererFactory<? super E> factory,
-            BlockEntityType<E> type) {
+    //? if >=1.21.9 {
+    /*private static <E extends BlockEntity, S extends net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState> void register(BlockEntityRendererProvider<E, S> rendererFactory, BlockEntityType<E> blockEntityType) {
+        net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(blockEntityType, rendererFactory);
+    *///?} else {
+    private static <E extends BlockEntity> void register(BlockEntityRendererProvider<? super E> rendererFactory, BlockEntityType<E> blockEntityType) {
+        BlockEntityRendererRegistry.register(blockEntityType, rendererFactory);
+    //?}
 
-        BlockEntityRendererRegistry.register(type, factory);
+        ResourceLocation id = GameRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntityType);
+        Block block = GameRegistries.get(GameRegistries.BLOCK, id);
+        Item item = GameRegistries.get(GameRegistries.ITEM, id);
+        if (GameRegistries.BLOCK.getKey(block).equals(GameRegistries.BLOCK.getDefaultKey()) || GameRegistries.ITEM.getKey(item).equals(GameRegistries.ITEM.getDefaultKey())) {
+            return;
+        }
 
-        // Also register an item renderer so the block shows as a 3D model in inventory.
-        Identifier id    = Registries.BLOCK_ENTITY_TYPE.getId(type);
-        Block      block = Registries.BLOCK.get(id);
-        Item       item  = Registries.ITEM.get(id);
-
-        // Skip if no matching block or item was found.
-        if (Registries.BLOCK.getId(block).equals(Registries.BLOCK.getDefaultId())) return;
-        if (Registries.ITEM.getId(item).equals(Registries.ITEM.getDefaultId()))  return;
-
-        BlockEntity renderEntity = type.instantiate(BlockPos.ORIGIN, block.getDefaultState());
-        if (renderEntity == null) return;
-
-        BuiltinItemRendererRegistry.INSTANCE.register(item,
-                (stack, mode, matrices, vertexConsumers, light, overlay) ->
-                        MinecraftClient.getInstance()
-                                .getBlockEntityRenderDispatcher()
-                                .renderEntity(renderEntity, matrices, vertexConsumers, light, overlay));
+        // A world-less block entity: the renderers detect this and draw the whole model for the item.
+        BlockEntity renderEntity = blockEntityType.create(BlockPos.ZERO, block.defaultBlockState());
+        //? if <1.21.4 {
+        BuiltinItemRendererRegistry.INSTANCE.register(item, (stack, mode, matrices, vertexConsumers, light, overlay) ->
+            Minecraft.getInstance().getBlockEntityRenderDispatcher().renderItem(renderEntity, matrices, vertexConsumers, light, overlay)
+        );
+        //?}
     }
 }

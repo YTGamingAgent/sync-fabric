@@ -3,19 +3,24 @@ package net.stacking.sync_mod.client.gui.widget;
 import net.stacking.sync_mod.client.gui.TooltipProvider;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Drawable;
-import net.minecraft.client.gui.Element;
-import net.minecraft.client.gui.Selectable;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.screen.narration.NarrationPart;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.Text;
-
+//? if >=1.20 {
+import net.minecraft.client.gui.GuiGraphics;
+//?} else
+/*import com.mojang.blaze3d.vertex.PoseStack;*/
+import net.stacking.sync_mod.client.gui.GuiContext;
+//? if >=1.19.3 {
+import net.minecraft.client.gui.components.Renderable;
+//?} else
+/*import net.minecraft.client.gui.components.Widget;*/
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.narration.NarratableEntry;
+import net.minecraft.client.gui.narration.NarratedElementType;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
 import java.util.Date;
 
 @Environment(EnvType.CLIENT)
-public abstract class AbstractWidget implements Drawable, Selectable, TooltipProvider, Element {
+public abstract class AbstractWidget implements /*? if >=1.19.3 {*/Renderable/*?} else {*//*Widget*//*?}*/, NarratableEntry, TooltipProvider, GuiEventListener {
     public boolean visible = true;
     private boolean isHovered = false;
     private boolean isPressed = false;
@@ -32,14 +37,23 @@ public abstract class AbstractWidget implements Drawable, Selectable, TooltipPro
     }
 
     @Override
-    public void render(DrawContext drawContext, int mouseX, int mouseY, float delta) {
+    //? if >=26.1 {
+    /*public void extractRenderState(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    *///?} else if >=1.20 {
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(graphics);
+    //?} else {
+    /*public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
+        GuiContext drawContext = new GuiContext(matrices, null);
+    *///?}
         if (this.visible) {
             this.mouseMoved(mouseX, mouseY);
             this.renderContent(drawContext, mouseX, mouseY, delta);
         }
     }
 
-    protected abstract void renderContent(DrawContext drawContext, int mouseX, int mouseY, float delta);
+    protected abstract void renderContent(GuiContext drawContext, int mouseX, int mouseY, float delta);
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
@@ -52,6 +66,19 @@ public abstract class AbstractWidget implements Drawable, Selectable, TooltipPro
         }
     }
 
+    //? if >=1.21.9 {
+    /*@Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        return this.mouseClicked(event.x(), event.y(), event.button());
+    }
+
+    @Override
+    public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
+        return this.mouseReleased(event.x(), event.y(), event.button());
+    }
+    *///?}
+
+    //? if <1.21.9
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (this.visible && this.isHovered) {
@@ -61,6 +88,7 @@ public abstract class AbstractWidget implements Drawable, Selectable, TooltipPro
         return false;
     }
 
+    //? if <1.21.9
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (this.visible && this.isPressed) {
@@ -74,12 +102,12 @@ public abstract class AbstractWidget implements Drawable, Selectable, TooltipPro
     protected void onMouseClick(double mouseX, double mouseY, int button) { }
 
     @Override
-    public SelectionType getType() {
-        return this.isPressed() ? SelectionType.FOCUSED : this.isHovered() ? SelectionType.HOVERED : SelectionType.NONE;
+    public NarrationPriority narrationPriority() {
+        return this.isPressed() ? NarrationPriority.FOCUSED : this.isHovered() ? NarrationPriority.HOVERED : NarrationPriority.NONE;
     }
 
     @Override
-    public Text getTooltip() {
+    public Component getTooltip() {
         if (this.isHovered && (new Date().getTime() - this.lastMovementTime) >= this.getTooltipDelay()) {
             return this.getWidgetDescription();
         }
@@ -91,15 +119,15 @@ public abstract class AbstractWidget implements Drawable, Selectable, TooltipPro
         return 500;
     }
 
-    protected Text getWidgetDescription() {
+    protected Component getWidgetDescription() {
         return null;
     }
 
     @Override
-    public void appendNarrations(NarrationMessageBuilder builder) {
-        Text description = this.getWidgetDescription();
+    public void updateNarration(NarrationElementOutput builder) {
+        Component description = this.getWidgetDescription();
         if (description != null) {
-            builder.put(NarrationPart.TITLE, description);
+            builder.add(NarratedElementType.TITLE, description);
         }
     }
 }

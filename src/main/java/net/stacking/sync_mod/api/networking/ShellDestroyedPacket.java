@@ -1,53 +1,55 @@
 package net.stacking.sync_mod.api.networking;
 
+import net.stacking.sync_mod.util.WorldUtil;
+
 import net.stacking.sync_mod.Sync;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.level.block.Blocks;
 
 public class ShellDestroyedPacket implements ClientPlayerPacket {
     private BlockPos pos;
 
     // ADDED: Default no-args constructor
     public ShellDestroyedPacket() {
-        this(BlockPos.ORIGIN);
+        this(BlockPos.ZERO);
     }
 
     public ShellDestroyedPacket(BlockPos pos) {
-        this.pos = pos == null ? BlockPos.ORIGIN : pos;
+        this.pos = pos == null ? BlockPos.ZERO : pos;
     }
 
     @Override
-    public Identifier getId() {
+    public ResourceLocation getId() {
         return Sync.locate("packet.shell.destroyed");
     }
 
     @Override
-    public void write(PacketByteBuf buffer) {
+    public void write(FriendlyByteBuf buffer) {
         buffer.writeBlockPos(this.pos);
     }
 
     @Override
-    public void read(PacketByteBuf buffer) {
+    public void read(FriendlyByteBuf buffer) {
         this.pos = buffer.readBlockPos();
     }
 
     @Environment(EnvType.CLIENT)
     @Override
-    public void execute(MinecraftClient client, ClientPlayerEntity player, ClientPlayNetworkHandler handler) {
+    public void execute(Minecraft client, LocalPlayer player, ClientPacketListener handler) {
         for (int i = 0; i < 3; ++i) {
-            player.clientWorld.addBlockBreakParticles(this.pos, Blocks.DEEPSLATE.getDefaultState());
-            player.clientWorld.addBlockBreakParticles(this.pos.up(), Blocks.DEEPSLATE.getDefaultState());
+            ((net.minecraft.client.multiplayer.ClientLevel)WorldUtil.level(player)).addDestroyBlockEffect(this.pos, Blocks.DEEPSLATE.defaultBlockState());
+            ((net.minecraft.client.multiplayer.ClientLevel)WorldUtil.level(player)).addDestroyBlockEffect(this.pos.above(), Blocks.DEEPSLATE.defaultBlockState());
         }
-        player.clientWorld.playSound(player, this.pos, SoundEvents.BLOCK_DEEPSLATE_BREAK, SoundCategory.BLOCKS, 1F, player.getSoundPitch());
+        ((net.minecraft.client.multiplayer.ClientLevel)WorldUtil.level(player)).playSound(player, this.pos, SoundEvents.DEEPSLATE_BREAK, SoundSource.BLOCKS, 1F, player.getVoicePitch());
     }
 }

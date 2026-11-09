@@ -1,141 +1,166 @@
 package net.stacking.sync_mod.client.model;
 
-import net.stacking.sync_mod.util.client.render.ColorUtil;
+import net.stacking.sync_mod.util.client.render.ModelUtil;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.DoubleBlockProperties;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.DyeColor;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
 
 @Environment(EnvType.CLIENT)
 public class ShellStorageModel extends AbstractShellContainerModel {
+    public final ModelPart floor;
+    public final ModelPart floorRimF;
+    public final ModelPart floorRimL;
+    public final ModelPart floorRimR;
+    public final ModelPart floorRimB;
 
-    // ---- Floor & Ceiling ----
-    private final ModelPart floor;
-    private final ModelPart ceiling;
+    public final ModelPart ceiling;
+    public final ModelPart ceilingRimF;
+    public final ModelPart ceilingRimL;
+    public final ModelPart ceilingRimR;
+    public final ModelPart ceilingRimB;
 
-    // ---- Side glass walls (left = +X side, right = -X side), split at block boundary ----
-    private final ModelPart wallLL;
-    private final ModelPart wallLU;
-    private final ModelPart wallRL;
-    private final ModelPart wallRU;
+    public final ModelPart feetRetainerF;
+    public final ModelPart feetRetainerL;
+    public final ModelPart feetRetainerR;
+    public final ModelPart feetRetainerB;
+    public final ModelPart feetRetainerSupportR;
+    public final ModelPart feetRetainerSupportL;
 
-    // ---- Striped back wall (opaque, BOTTOM only — full height so the stripe
-    //      texture covers the entire interior back face) ----
-    private final ModelPart backWall;
+    public final ModelPart shoulderRetainerL;
+    public final ModelPart shoulderRetainerLT;
+    public final ModelPart shoulderRetainerR;
+    public final ModelPart shoulderRetainerRT;
 
-    // ---- Corner pillars ----
-    private final ModelPart pillarFLL;
-    private final ModelPart pillarFLU;
-    private final ModelPart pillarFRL;
-    private final ModelPart pillarFRU;
-    private final ModelPart pillarBLL;
-    private final ModelPart pillarBLU;
-    private final ModelPart pillarBRL;
-    private final ModelPart pillarBRU;
+    public final ModelPart headRetainerT;
+    public final ModelPart headRetainerL;
+    public final ModelPart headRetainerR;
+    public final ModelPart headRetainerB;
+    public final ModelPart headConnector;
 
-    // ---- Connector post (createCuboid = not auto-rendered; animated in render()) ----
-    private final ModelPart connectorBase;
-    private final ModelPart connector;
+    public final ModelPart wallLU;
+    public final ModelPart wallLL;
+    public final ModelPart wallRU;
+    public final ModelPart wallRL;
+    public final ModelPart wallBU;
+    public final ModelPart wallBL;
 
-    // ---- LED indicator — right-front inner wall, near floor
-    //      createCuboid = only rendered with ledColor tint ----
-    private final ModelPart ledPivot;
-    private final ModelPart ledLight;
+    public final ModelPart pillarFRU;
+    public final ModelPart pillarFRL;
+    public final ModelPart pillarFLU;
+    public final ModelPart pillarFLL;
+    public final ModelPart pillarBRU;
+    public final ModelPart pillarBRL;
+    public final ModelPart pillarBLU;
+    public final ModelPart pillarBLL;
+    public final ModelPart pillarBU1;
+    public final ModelPart pillarBU2;
+    public final ModelPart pillarBU3;
+    public final ModelPart pillarBU4;
+    public final ModelPart pillarBL1;
+    public final ModelPart pillarBL2;
+    public final ModelPart pillarBL3;
+    public final ModelPart pillarBL4;
 
-    private final ModelPart doorLL;
-    private final ModelPart doorLU;
-    private final ModelPart doorRL;
-    private final ModelPart doorRU;
-
+    public final ModelPart ledT;
+    public final ModelPart ledL;
+    public final ModelPart ledR;
+    public final ModelPart ledB;
+    public final ModelPart ledLight;
     public DyeColor ledColor;
+
     public float connectorProgress;
 
     public ShellStorageModel() {
-        super(256, 256);
+        ModelPart ledTemplate = this.createRotationTemplate(-0.4833219F, 0, 0);
 
-        // ---- Floor (BOTTOM) -------------------------------------------------------
         this.floor = this.addCuboid(BOTTOM, 64, 62, -16, 23, -16, 32, 1, 32);
+        this.floorRimF = this.addCuboid(BOTTOM, 70, 34, -13, 22, -14, 26, 1, 3);
+        this.floorRimL = this.addCuboid(BOTTOM, 0, 38, 13, 22, -14, 3, 1, 27);
+        this.floorRimR = this.addCuboid(BOTTOM, 0, 38, -16, 22, -14, 3, 1, 27);
+        this.floorRimB = this.addCuboid(BOTTOM, 0, 34, -16, 22, 13, 32, 1, 3);
 
-        // ---- Ceiling (TOP) --------------------------------------------------------
         this.ceiling = this.addCuboid(TOP, 0, 0, -16, -8, -16, 32, 2, 32);
+        this.ceilingRimF = this.addCuboid(TOP, 70, 34, -13, -6, -14, 26, 1, 3);
+        this.ceilingRimL = this.addCuboid(TOP, 0, 38, 13, -6, -14, 3, 1, 27);
+        this.ceilingRimR = this.addCuboid(TOP, 0, 38, -16, -6, -14, 3, 1, 27);
+        this.ceilingRimB = this.addCuboid(TOP, 0, 34, -16, -6, 13, 32, 1, 3);
 
-        // ---- Side glass walls, split at block boundary ----------------------------
-        this.wallLL = this.addCuboid(BOTTOM, 200, 122,  15.05F, -8, -14, 1, 30, 27);
-        this.wallLU = this.addCuboid(TOP,    200,  66,  15.05F, -5, -14, 1, 29, 27);
+        this.feetRetainerF = this.addCuboid(BOTTOM, 70, 100, -9, 16, -4.75F, 18, 3, 1);
+        this.feetRetainerB = this.addCuboid(BOTTOM, 70, 100, -9, 16, 4.25F, 18, 3, 1);
+        this.feetRetainerR = this.addCuboid(BOTTOM, 70, 104, -9, 16, -3.75F, 1, 3, 8);
+        this.feetRetainerL = this.addCuboid(BOTTOM, 70, 104, 8, 16, -3.75F, 1, 3, 8);
+        this.feetRetainerSupportR = this.addCuboid(BOTTOM, 70, 115, -9F, 16.75F, -0.75F, 1, 9, 2);
+        this.feetRetainerSupportL = this.addCuboid(BOTTOM, 70, 115, 8F, 16.75F, -0.75F, 1, 9, 2);
+
+        this.shoulderRetainerL = this.addCuboid(TOP, 70, 107, 6.5F, 16, -5, 1, 1, 19);
+        this.shoulderRetainerLT = this.addCuboid(TOP, 78, 115, 6.5F, 13, -5, 1, 4, 1);
+        this.shoulderRetainerR = this.addCuboid(TOP, 70, 107, -7.5F, 16, -5, 1, 1, 19);
+        this.shoulderRetainerRT = this.addCuboid(TOP, 78, 115, -7.5F, 13, -5, 1, 4, 1);
+
+        this.headRetainerL = this.addCuboid(TOP, 70, 127, 0.5F, 3, 9, 1, 1, 6);
+        this.headRetainerT = this.addCuboid(TOP, 70, 134, -1.5F, 2, 9, 3, 1, 6);
+        this.headRetainerB = this.addCuboid(TOP, 70, 134, -1.5F, 4, 9, 3, 1, 6);
+        this.headRetainerR = this.addCuboid(TOP, 70, 127, -1.5F, 3, 9, 1, 1, 6);
+        this.headConnector = this.addCuboid(TOP, 70, 141, -0.5F, 3, 10, 1, 1, 5);
+
+        this.wallLL = this.addCuboid(BOTTOM, 200, 122, 15.05F, -8, -14, 1, 30, 27);
+        this.wallLU = this.addCuboid(TOP, 200, 66, 15.05F, -5, -14, 1, 29, 27);
+
         this.wallRL = this.addCuboid(BOTTOM, 200, 122, -16.05F, -8, -14, 1, 30, 27);
-        this.wallRU = this.addCuboid(TOP,    200,  66, -16.05F, -5, -14, 1, 29, 27);
+        this.wallRU = this.addCuboid(TOP, 200, 66, -16.05F, -5, -14, 1, 29, 27);
 
-        // ---- Back wall with black/white stripes (BOTTOM, spans full 2-block height) --
-        // The FRONT face (facing the open doorway) carries the stripe UV at (102,189).
-        // Height=62 covers both lower and upper halves from the BOTTOM origin:
-        //   y=-8 to y-62  in model space  →  world_y ≈ 0.0 to 2.0 (full 2 blocks)
-        this.backWall = this.addCuboid(BOTTOM, 101, 188, -13, -8, 14, 26, 62, 1);
+        this.wallBL = this.addCuboid(BOTTOM, 96, 161, -13, -8, 14, 26, 30, 2);
+        this.wallBU = this.addCuboid(TOP, 96, 128, -13, -5, 14, 26, 29, 2);
 
-        // ---- Corner pillars -------------------------------------------------------
-        this.pillarFLL = this.addCuboid(BOTTOM, 60,  68, -16, -8, -15,  1, 31,  1);
-        this.pillarFLU = this.addCuboid(TOP,    60,  38, -16, -6, -15,  1, 30,  1);
-        this.pillarFRL = this.addCuboid(BOTTOM, 60,  68,  15, -8, -15,  1, 31,  1);
-        this.pillarFRU = this.addCuboid(TOP,    60,  38,  15, -6, -15,  1, 30,  1);
-        this.pillarBLL = this.addCuboid(BOTTOM,  0, 155, -16, -8,  13,  3, 31,  3);
-        this.pillarBLU = this.addCuboid(TOP,     0, 126, -16, -6,  13,  3, 30,  3);
-        this.pillarBRL = this.addCuboid(BOTTOM,  0, 155,  13, -8,  13,  3, 31,  3);
-        this.pillarBRU = this.addCuboid(TOP,     0, 126,  13, -6,  13,  3, 30,  3);
+        this.pillarFRL = this.addCuboid(BOTTOM, 60, 68, -16, -8, -15, 1, 31, 1);
+        this.pillarFRU = this.addCuboid(TOP, 60, 38, -16, -6, -15, 1, 30, 1);
 
-        // ---- Connector post -------------------------------------------------------
-        this.connectorBase = this.addCuboid(BOTTOM, 0, 50, -4, 16, -4, 8, 8, 8);
-        this.connector     = this.createCuboid(      0, 60, -3,  8, -3, 6, 16, 6);
+        this.pillarFLL = this.addCuboid(BOTTOM, 60, 68, 15, -8, -15, 1, 31, 1);
+        this.pillarFLU = this.addCuboid(TOP, 60, 38, 15, -6, -15, 1, 30, 1);
 
-        // ---- LED indicator -------------------------------------------------------
-        // Positioned on the right-front inner face (x=13, near front z=-13, y=18 ≈
-        // world 0.19 above the floor).  Protrudes 1 unit inward so it's visible.
-        // W=2, H=4, D=1  →  UV(0,70) front face at (1,71) 2×4.
-        this.ledPivot = this.createRotationTemplate(0, 0, 0);
-        this.ledLight = this.createCuboid(0, 70, 13, 18, -13, 2, 4, 1);
-        this.doorLL = this.createCuboid(140, 0, 15F, -8F, -15F, -15F, 0F, 0F, 15, 30, 1);
-        this.doorLU = this.createCuboid(140, 0, 15F, -5F, -15F, -15F, 0F, 0F, 15, 29, 1);
-        this.doorRL = this.createCuboid(140, 0, -15F, -8F, -15F, 0F, 0F, 0F, 15, 30, 1);
-        this.doorRU = this.createCuboid(140, 0, -15F, -5F, -15F, 0F, 0F, 0F, 15, 29, 1);
+        this.pillarBRL = this.addCuboid(BOTTOM, 0, 155, -16, -8, 13, 3, 30, 3);
+        this.pillarBRU = this.addCuboid(TOP, 0, 126, -16, -5, 13, 3, 29, 3);
+
+        this.pillarBLL = this.addCuboid(BOTTOM, 0, 155, 13, -8, 13, 3, 30, 3);
+        this.pillarBLU = this.addCuboid(TOP, 0, 126, 13, -5, 13, 3, 29, 3);
+
+        this.pillarBL1 = this.addCuboid(BOTTOM, 88, 157, -10.5F, -8, 13, 3, 30, 1);
+        this.pillarBU1 = this.addCuboid(TOP, 88, 128, -10.5F, -5, 13, 3, 29, 1);
+
+        this.pillarBL2 = this.addCuboid(BOTTOM, 88, 157, -4.5F, -8, 13, 3, 30, 1);
+        this.pillarBU2 = this.addCuboid(TOP, 88, 128, -4.5F, -5, 13, 3, 29, 1);
+
+        this.pillarBL3 = this.addCuboid(BOTTOM, 88, 157, 1.5F, -8, 13, 3, 30, 1);
+        this.pillarBU3 = this.addCuboid(TOP, 88, 128, 1.5F, -5, 13, 3, 29, 1);
+
+        this.pillarBL4 = this.addCuboid(BOTTOM, 88, 157, 7.5F, -8, 13, 3, 30, 1);
+        this.pillarBU4 = this.addCuboid(TOP, 88, 128, 7.5F, -5, 13, 3, 29, 1);
+
+        this.ledB = this.addCuboid(BOTTOM, 0, 0, 8, 21.5F, 9.335F, 5, 1, 1, ledTemplate);
+        this.ledT = this.addCuboid(BOTTOM, 0, 0, 8, 16.2F, 12.12F, 5, 1, 1, ledTemplate);
+        this.ledR = this.addCuboid(BOTTOM, 0, 0, 8, 17, 11.7F, 1, 6, 1, ledTemplate);
+        this.ledL = this.addCuboid(BOTTOM, 0, 0, 12, 17, 11.7F, 1, 6, 1, ledTemplate);
+        this.ledLight = this.createCuboid(0, 9, 8, 17.15F, 11.8F, 5, 8, 1, ledTemplate);
+        this.ledColor = DyeColor.RED;
     }
 
     @Override
-    protected void renderDoors(DoubleBlockProperties.Type type, MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
-        float angle = (float)(Math.PI / 2) * this.doorOpenProgress;
-        if (type == BOTTOM) {
-            this.doorLL.yaw = -angle;
-            this.doorRL.yaw =  angle;
-            this.doorLL.render(matrices, vertices, light, overlay, color);
-            this.doorRL.render(matrices, vertices, light, overlay, color);
-        } else {
-            this.doorLU.yaw = -angle;
-            this.doorRU.yaw =  angle;
-            this.doorLU.render(matrices, vertices, light, overlay, color);
-            this.doorRU.render(matrices, vertices, light, overlay, color);
-        }
-    }
-
-    @Override
-    public void render(DoubleBlockProperties.Type type, MatrixStack matrices,
-                       VertexConsumer vertices, int light, int overlay, int color) {
+    public void render(DoubleBlockCombiner.BlockType type, PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+        this.headConnector.z = 10 - 5 * this.connectorProgress;
         super.render(type, matrices, vertices, light, overlay, color);
-
-        // Animated connector post.
         if (type == BOTTOM) {
-            matrices.push();
-            matrices.translate(0, this.connectorProgress * 8F / 16F, 0);
-            this.connector.render(matrices, vertices, light, overlay, color);
-            matrices.pop();
-        }
-
-        // LED — rendered only with the indicator colour (green/blue/red).
-        if (type == BOTTOM && this.ledColor != null) {
-            matrices.push();
-            this.ledPivot.rotate(matrices);
-            this.ledLight.render(matrices, vertices, light, overlay,
-                    ColorUtil.fromDyeColor(this.ledColor));
-            matrices.pop();
+            // Same colour source as the original (DyeColor's entity colour), forced to full alpha.
+            //? if >=1.21 {
+            int ledArgb = 0xFF000000 | (this.ledColor.getTextureDiffuseColor() & 0x00FFFFFF);
+            //?} else {
+            /*float[] rgb = this.ledColor.getTextureDiffuseColors();
+            int ledArgb = ModelUtil.argb(rgb[0], rgb[1], rgb[2], 1F);
+            *///?}
+            ModelUtil.renderPart(this.ledLight, matrices, vertices, light, overlay, ledArgb);
         }
     }
 }

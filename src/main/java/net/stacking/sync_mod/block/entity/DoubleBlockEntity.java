@@ -1,8 +1,8 @@
 package net.stacking.sync_mod.block.entity;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.DoubleBlockProperties;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
+import net.minecraft.world.level.block.state.BlockState;
 
 public interface DoubleBlockEntity {
-    DoubleBlockProperties.Type getBlockType(BlockState state);
+    DoubleBlockCombiner.BlockType getBlockType(BlockState state);
 }

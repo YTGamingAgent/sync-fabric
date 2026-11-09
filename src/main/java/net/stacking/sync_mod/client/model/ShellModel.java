@@ -1,30 +1,27 @@
 package net.stacking.sync_mod.client.model;
 
+import net.stacking.sync_mod.util.client.render.ModelUtil;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.model.Model;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.entity.model.AnimalModel;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
 import net.stacking.sync_mod.api.shell.ShellState;
-import net.stacking.sync_mod.client.render.CustomRenderLayer;
-
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.Random;
 
 @Environment(EnvType.CLIENT)
-public class ShellModel<T extends AnimalModel<?>> extends Model {
-    public final T parentModel;
+public class ShellModel {
+    public final Model parentModel;
     private float buildProgress;
     private final VoxelModel voxelModel;
 
-    public ShellModel(T parentModel) {
+    public ShellModel(Model parentModel) {
         this(parentModel, new Random());
     }
 
-    public ShellModel(T parentModel, Random random) {
-        super(null);
+    public ShellModel(Model parentModel, Random random) {
         this.parentModel = parentModel;
         this.buildProgress = 0;
         this.voxelModel = VoxelModel.fromModel(parentModel, random);
@@ -39,32 +36,36 @@ public class ShellModel<T extends AnimalModel<?>> extends Model {
         this.voxelModel.destructionProgress = destructionProgress;
     }
 
-    @Override
-    public RenderLayer getLayer(Identifier textureId) {
+    public RenderType renderType(ResourceLocation textureId) {
         if (this.isBeingPrinted() || this.isBeingDestroyed()) {
-            return this.voxelModel.getLayer(textureId);
+            return this.voxelModel.renderType();
         }
 
-        if (this.isBeingPainted()) {
-            float paintingProgress = (this.buildProgress - ShellState.PROGRESS_PRINTING) / ShellState.PROGRESS_PAINTING;
-            float cutoutY = this.voxelModel.pivotY + this.voxelModel.sizeY * (1F - paintingProgress);
-            return CustomRenderLayer.getEntityTranslucentPartiallyTextured(textureId, cutoutY);
-        }
-
-        return RenderLayer.getEntityTranslucent(textureId);
+        // While being painted, the skin is drawn normally and CustomRenderLayer.getPaintingMask
+        // is drawn over it (see ShellEntityRenderer).
+        return RenderType.entityTranslucent(textureId);
     }
 
-    @Override
-    public void render(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
-        Model target = (this.isBeingPrinted() || this.isBeingDestroyed()) ? this.voxelModel : this.parentModel;
-        target.render(matrices, vertices, light, overlay, color);
+    public void renderModel(PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+        if (this.isBeingPrinted() || this.isBeingDestroyed()) {
+            this.voxelModel.renderModel(matrices, vertices, light, overlay, color);
+        } else {
+            ModelUtil.renderModel(this.parentModel, matrices, vertices, light, overlay, color);
+        }
     }
 
     private boolean isBeingPrinted() {
         return this.buildProgress >= ShellState.PROGRESS_START && this.buildProgress < ShellState.PROGRESS_PRINTING;
     }
 
-    private boolean isBeingPainted() {
+    /**
+     * @return 0 (nothing painted) to 1 (fully painted) while the shell is being painted.
+     */
+    public float getPaintingProgress() {
+        return (this.buildProgress - ShellState.PROGRESS_PRINTING) / ShellState.PROGRESS_PAINTING;
+    }
+
+    public boolean isBeingPainted() {
         return this.buildProgress >= ShellState.PROGRESS_PRINTING && this.buildProgress < ShellState.PROGRESS_DONE;
     }
 

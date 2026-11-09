@@ -1,7 +1,7 @@
 package net.stacking.sync_mod.client.gui;
 
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 public interface TooltipProvider {
-    Text getTooltip();
+    Component getTooltip();
 }

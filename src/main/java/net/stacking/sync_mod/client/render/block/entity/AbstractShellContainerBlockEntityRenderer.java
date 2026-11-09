@@ -5,45 +5,55 @@ import net.stacking.sync_mod.block.entity.AbstractShellContainerBlockEntity;
 import net.stacking.sync_mod.client.model.AbstractShellContainerModel;
 import net.stacking.sync_mod.client.model.DoubleBlockModel;
 import net.stacking.sync_mod.entity.ShellEntity;
+import net.stacking.sync_mod.client.render.entity.ShellEntityRenderer;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.render.entity.EntityRenderer;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.Minecraft;
+//? if <26.2
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.world.level.block.state.BlockState;
 
 @Environment(EnvType.CLIENT)
 public abstract class AbstractShellContainerBlockEntityRenderer<T extends AbstractShellContainerBlockEntity> extends DoubleBlockEntityRenderer<T> {
-    public AbstractShellContainerBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
+    public AbstractShellContainerBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
         super(context);
     }
 
+    //? if >=1.21.9 {
+    /*@Override
+    @SuppressWarnings("unchecked")
+    public void submit(DoubleBlockEntityRenderer.State state, PoseStack matrices, net.minecraft.client.renderer.SubmitNodeCollector collector, net.minecraft.client.renderer.state.CameraRenderState camera) {
+        super.submit(state, matrices, collector, camera);
+        T blockEntity = (T)state.blockEntity;
+        if (blockEntity.getShellState() != null) {
+            float yaw = this.getFacing(this.getBlockState(blockEntity)).getOpposite().toYRot();
+            ShellEntityRenderer.submitShell(this.createEntity(blockEntity.getShellState(), blockEntity, state.tickDelta), yaw, 0, matrices, collector, camera);
+        }
+    }
+    *///?} else {
     @Override
-    public void render(T blockEntity, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, int overlay) {
+    //? if >=1.21.5 {
+    /*public void render(T blockEntity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay, net.minecraft.world.phys.Vec3 cameraPos) {
+        super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay, cameraPos);
+    *///?} else {
+    public void render(T blockEntity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
         super.render(blockEntity, tickDelta, matrices, vertexConsumers, light, overlay);
+    //?}
         if (blockEntity.getShellState() != null) {
             this.renderShell(blockEntity.getShellState(), blockEntity, tickDelta, this.getBlockState(blockEntity), matrices, vertexConsumers, light);
         }
     }
 
-    /**
-     * Shell containers (Constructor, Storage) only place a BlockEntity on the LOWER half.
-     * We must always render both the BOTTOM and TOP model parts from that single entity.
-     */
-    @Override
-    protected boolean shouldRenderAllParts() {
-        return true;
-    }
-
-    protected void renderShell(ShellState shellState, T blockEntity, float tickDelta, BlockState blockState, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light) {
-        float yaw = this.getFacing(blockState).getOpposite().asRotation();
+    protected void renderShell(ShellState shellState, T blockEntity, float tickDelta, BlockState blockState, PoseStack matrices, MultiBufferSource vertexConsumers, int light) {
+        float yaw = this.getFacing(blockState).getOpposite().toYRot();
         ShellEntity shellEntity = this.createEntity(shellState, blockEntity, tickDelta);
 
-        EntityRenderer<? super ShellEntity> renderer = MinecraftClient.getInstance().getEntityRenderDispatcher().getRenderer(shellEntity);
-        renderer.render(shellEntity, yaw, 0, matrices, vertexConsumers, light);
+        ShellEntityRenderer.renderShell(shellEntity, yaw, 0, matrices, vertexConsumers, light);
     }
+    //?}
 
     @Override
     protected DoubleBlockModel getModel(T blockEntity, BlockState blockState, float tickDelta) {

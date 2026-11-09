@@ -16,19 +16,17 @@ import net.stacking.sync_mod.util.BlockPosUtil;
 import net.stacking.sync_mod.entity.PersistentCameraEntity;
 import net.stacking.sync_mod.entity.PersistentCameraEntityGoal;
 import net.stacking.sync_mod.util.WorldUtil;
-import net.stacking.sync_mod.block.entity.ShellConstructorBlockEntity;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.DeathScreen;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.network.encryption.PlayerPublicKey;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -47,11 +45,11 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Environment(EnvType.CLIENT)
-@Mixin(ClientPlayerEntity.class)
-abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implements ClientShell, KillableEntity, LookingEntity {
+@Mixin(LocalPlayer.class)
+abstract class ClientPlayerEntityMixin extends AbstractClientPlayer implements ClientShell, KillableEntity, LookingEntity {
     @Final
     @Shadow
-    protected MinecraftClient client;
+    protected Minecraft minecraft;
 
     @Unique
     private boolean isArtificial = false;
@@ -60,14 +58,14 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
     private ConcurrentMap<UUID, ShellState> shellsById = new ConcurrentHashMap<>();
 
 
-    private ClientPlayerEntityMixin(ClientWorld world, GameProfile profile) {
-        super(world, profile);
+    private ClientPlayerEntityMixin(ClientLevel world, GameProfile profile) {
+        super(world, profile/*? if <1.19.3 {*//*, null*//*?}*/);
     }
 
 
     @Override
     public @Nullable PlayerSyncEvents.SyncFailureReason beginSync(ShellState state) {
-        ClientWorld world = this.clientWorld;
+        ClientLevel world = (ClientLevel)WorldUtil.level(this);
         if (world == null) {
             return PlayerSyncEvents.SyncFailureReason.OTHER_PROBLEM;
         }
@@ -83,31 +81,25 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
 
         PlayerSyncEvents.START_SYNCING.invoker().onStartSyncing(this, state);
 
-        BlockPos pos = this.getBlockPos();
-        Direction facing = BlockPosUtil.getHorizontalFacing(pos, world).orElse(this.getHorizontalFacing().getOpposite());
+        BlockPos pos = this.blockPosition();
+        Direction facing = BlockPosUtil.getHorizontalFacing(pos, world).orElse(this.getDirection().getOpposite());
         SynchronizationRequestPacket request = new SynchronizationRequestPacket(state);
-        PersistentCameraEntityGoal cameraGoal = this.isDead()
+        PersistentCameraEntityGoal cameraGoal = this.isDeadOrDying()
                 ? PersistentCameraEntityGoal.limbo(pos, facing, state.getPos(), __ -> request.send())
                 : PersistentCameraEntityGoal.stairwayToHeaven(pos, facing, state.getPos(), __ -> request.send());
 
         HudController.hide();
-        if (this.isDead()) {
+        if (this.isDeadOrDying()) {
             DeathScreenController.suspend();
         }
-        this.client.setScreen(null);
-        PersistentCameraEntity.setup(this.client, cameraGoal);
+        this.minecraft.setScreen(null);
+        PersistentCameraEntity.setup(this.minecraft, cameraGoal);
         return null;
     }
 
     @Override
-    public void endSync(Identifier startWorld, BlockPos startPos, Direction startFacing, Identifier targetWorld, BlockPos targetPos, Direction targetFacing, @Nullable ShellState storedState) {
-        ClientPlayerEntity player = (ClientPlayerEntity)(Object)this;
-
-        // ── Restore original body visibility ──
-        player.setInvisible(false);
-        player.setNoGravity(false);
-
-        // ... rest of method
+    public void endSync(ResourceLocation startWorld, BlockPos startPos, Direction startFacing, ResourceLocation targetWorld, BlockPos targetPos, Direction targetFacing, @Nullable ShellState storedState) {
+        LocalPlayer player = (LocalPlayer)(Object)this;
         boolean syncFailed = Objects.equals(startPos, targetPos);
 
         if (!syncFailed) {
@@ -117,19 +109,19 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
             this.deathTime = 0;
         }
 
-        float yaw = targetFacing.getOpposite().asRotation();
-        this.setYaw(yaw);
-        this.prevYaw = yaw;
-        this.prevBodyYaw = this.bodyYaw = yaw;
-        this.prevHeadYaw = this.headYaw = yaw;
-        player.lastRenderYaw = player.renderYaw = yaw;
+        float yaw = targetFacing.getOpposite().toYRot();
+        this.setYRot(yaw);
+        this.yRotO = yaw;
+        this.yBodyRotO = this.yBodyRot = yaw;
+        this.yHeadRotO = this.yHeadRot = yaw;
+        player.yBobO = player.yBob = yaw;
 
-        this.setPitch(0);
-        this.prevPitch = 0;
-        player.lastRenderPitch = player.renderPitch = 0;
+        this.setXRot(0);
+        this.xRotO = 0;
+        player.xBobO = player.xBob = 0;
 
         Runnable restore = () -> {
-            PersistentCameraEntity.unset(this.client);
+            PersistentCameraEntity.unset(this.minecraft);
             HudController.restore();
             DeathScreenController.restore();
             if (!syncFailed) {
@@ -140,7 +132,7 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
         boolean enableCamera = Objects.equals(startWorld, targetWorld);
         if (enableCamera) {
             PersistentCameraEntityGoal cameraGoal = PersistentCameraEntityGoal.highwayToHell(startPos, startFacing, targetPos, targetFacing, __ -> restore.run());
-            PersistentCameraEntity.setup(this.client, cameraGoal);
+            PersistentCameraEntity.setup(this.minecraft, cameraGoal);
         } else {
             restore.run();
         }
@@ -148,7 +140,7 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
 
     @Override
     public UUID getShellOwnerUuid() {
-        return this.getGameProfile().getId();
+        return this.getGameProfile()./*? if >=1.21.9 {*//*id()*//*?} else {*/getId()/*?}*/;
     }
 
     @Override
@@ -199,15 +191,15 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
 
     @Override
     public boolean changeLookingEntityLookDirection(double cursorDeltaX, double cursorDeltaY) {
-        return this.client.getCameraEntity() instanceof PersistentCameraEntity;
+        return this.minecraft.getCameraEntity() instanceof PersistentCameraEntity;
     }
 
     @Override
     public void onKillableEntityDeath() {
         boolean canRespawn = this.shellsById.values().stream()
         .anyMatch(s -> this.canBeApplied(s) && s.getProgress() >= ShellState.PROGRESS_DONE);
-        BlockPos pos = this.getBlockPos();
-        Identifier world = WorldUtil.getId(this.getWorld());
+        BlockPos pos = this.blockPosition();
+        ResourceLocation world = WorldUtil.getId(WorldUtil.level(this));
         Comparator<ShellState> comparator = ShellPriority.asComparator(world, pos, Sync.getConfig().syncPriority().stream().map(SyncConfig.ShellPriorityEntry::priority));
         ShellState respawnShell = canRespawn ? this.shellsById.values().stream().filter(x -> this.canBeApplied(x) && x.getProgress() >= ShellState.PROGRESS_DONE).min(comparator).orElse(null) : null;
         if (respawnShell != null) {
@@ -215,12 +207,12 @@ abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity implem
         }
     }
 
-    @Inject(method = "updatePostDeath", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "tickDeath", at = @At("HEAD"), cancellable = true)
     private void updatePostDeath(CallbackInfo ci) {
-        if (this.client.currentScreen instanceof DeathScreen) {
-            this.deathTime = MathHelper.clamp(this.deathTime, 0, 19);
+        if (this.minecraft.screen instanceof DeathScreen) {
+            this.deathTime = Mth.clamp(this.deathTime, 0, 19);
         } else {
-            this.deathTime = MathHelper.clamp(++this.deathTime, 0, 20);
+            this.deathTime = Mth.clamp(++this.deathTime, 0, 20);
             ci.cancel();
         }
     }

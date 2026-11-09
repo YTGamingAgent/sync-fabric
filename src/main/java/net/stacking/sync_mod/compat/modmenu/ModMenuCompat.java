@@ -18,6 +18,6 @@ public class ModMenuCompat implements ModMenuApi {
             return parent -> null;
         }
 
-        return parent -> AutoConfig.getConfigScreen(SyncClothConfig.class, parent).get();
+        return parent -> /*? if >=26.1 {*//*me.shedaniel.autoconfig.AutoConfigClient*//*?} else {*/AutoConfig/*?}*/.getConfigScreen(SyncClothConfig.class, parent).get();
     }
 }

@@ -1,28 +1,27 @@
 package net.stacking.sync_mod.util.nbt;
 
-import net.minecraft.nbt.NbtCompound;
-
 import java.util.function.BiConsumer;
+import net.minecraft.nbt.CompoundTag;
 
 public class NbtSerializer<T> {
     private final T target;
-    private final Iterable<BiConsumer<T, NbtCompound>> readers;
-    private final Iterable<BiConsumer<T, NbtCompound>> writers;
+    private final Iterable<BiConsumer<T, CompoundTag>> readers;
+    private final Iterable<BiConsumer<T, CompoundTag>> writers;
 
-    public NbtSerializer(T target, Iterable<BiConsumer<T, NbtCompound>> readers, Iterable<BiConsumer<T, NbtCompound>> writers) {
+    public NbtSerializer(T target, Iterable<BiConsumer<T, CompoundTag>> readers, Iterable<BiConsumer<T, CompoundTag>> writers) {
         this.target = target;
         this.readers = readers;
         this.writers = writers;
     }
 
-    public void readNbt(NbtCompound nbt) {
-        for (BiConsumer<T, NbtCompound> x : readers) {
+    public void readNbt(CompoundTag nbt) {
+        for (BiConsumer<T, CompoundTag> x : readers) {
             x.accept(this.target, nbt);
         }
     }
 
-    public NbtCompound writeNbt(NbtCompound nbt) {
-        for (BiConsumer<T, NbtCompound> x : writers) {
+    public CompoundTag writeNbt(CompoundTag nbt) {
+        for (BiConsumer<T, CompoundTag> x : writers) {
             x.accept(this.target, nbt);
         }
         return nbt;

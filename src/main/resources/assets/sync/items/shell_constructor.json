@@ -1,0 +1,10 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "sync:item/shell_constructor",
+    "model": {
+      "type": "sync:block_entity",
+      "block": "sync:shell_constructor"
+    }
+  }
+}

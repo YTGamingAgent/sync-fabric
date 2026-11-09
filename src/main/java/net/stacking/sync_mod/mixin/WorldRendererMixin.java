@@ -1,73 +1,57 @@
 package net.stacking.sync_mod.mixin;
 
-import net.stacking.sync_mod.client.render.MatrixStackStorage;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.*;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
-import org.joml.Matrix4f;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+//? if <26.2
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Environment(EnvType.CLIENT)
-@Mixin(value = WorldRenderer.class, priority = 1010)
+//? if >=26.2 {
+/*@Mixin(value = net.minecraft.client.renderer.extract.LevelExtractor.class, priority = 1010)
+*///?} else
+@Mixin(value = LevelRenderer.class, priority = 1010)
 abstract class WorldRendererMixin {
     @Final
     @Shadow
-    private MinecraftClient client;
+    private Minecraft minecraft;
 
     /**
-     * This method forces renderer to render the player when they aren't a camera entity.
-     *
-     * In 1.21+: WorldRenderer.render signature changed to:
-     * render(RenderTickCounter, boolean, Camera, GameRenderer, LightmapTextureManager, Matrix4f, Matrix4f)
+     * Makes the game draw the local player while they aren't the camera entity
+     * (e.g. while the camera flies to another shell). The redirected call is the
+     * "skip the local player unless it's the camera entity" check in the method that
+     * collects the entities to draw, which moved out of renderLevel in 1.21.2.
      */
     @Redirect(
-            method = "render",
+            //? if >=1.21.9 {
+            /*method = "extractVisibleEntities",
+            *///?} else if >=1.21.2 {
+            /*method = "collectVisibleEntities",
+            *///?} else
+            method = "renderLevel",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/Camera;getFocusedEntity()Lnet/minecraft/entity/Entity;",
+                    //? if >=1.21.11 {
+                    /*target = "Lnet/minecraft/client/Camera;entity()Lnet/minecraft/world/entity/Entity;",
+                    *///?} else
+                    target = "Lnet/minecraft/client/Camera;getEntity()Lnet/minecraft/world/entity/Entity;",
                     ordinal = 3
             ),
-            require = 0  // Changed from 1 to 0 to make it optional
+            require = 1
     )
     private Entity getFocusedEntity(Camera camera) {
-        ClientPlayerEntity player = this.client.player;
-        if (player != null && player != this.client.getCameraEntity() && !player.isSpectator()) {
+        LocalPlayer player = this.minecraft.player;
+        if (player != null && player != this.minecraft.getCameraEntity() && !player.isSpectator()) {
             return player;
         }
-        return camera.getFocusedEntity();
-    }
-
-    /**
-     * Updated for 1.21+ render signature.
-     * NEW SIGNATURE: render(RenderTickCounter tickCounter, boolean renderBlockOutline,
-     *                       Camera camera, GameRenderer gameRenderer,
-     *                       LightmapTextureManager lightmapTextureManager,
-     *                       Matrix4f positionMatrix, Matrix4f projectionMatrix)
-     */
-    @Inject(method = "render", at = @At("HEAD"))
-    private void render(
-            RenderTickCounter tickCounter,
-            boolean renderBlockOutline,
-            Camera camera,
-            GameRenderer gameRenderer,
-            LightmapTextureManager lightmapTextureManager,
-            Matrix4f positionMatrix,
-            Matrix4f projectionMatrix,
-            CallbackInfo ci
-    ) {
-        // Create a MatrixStack from the position matrix for compatibility
-        MatrixStack matrices = new MatrixStack();
-        matrices.peek().getPositionMatrix().set(positionMatrix);
-        MatrixStackStorage.saveModelMatrixStack(matrices);
+        return camera./*? if >=1.21.11 {*//*entity()*//*?} else {*/getEntity()/*?}*/;
     }
 }

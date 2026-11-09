@@ -1,11 +1,16 @@
 package net.stacking.sync_mod.compat.trinkets;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.stacking.sync_mod.util.WorldUtil;
+
+import net.stacking.sync_mod.util.nbt.Nbt;
+import net.stacking.sync_mod.util.nbt.ItemStackNbt;
+
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.stacking.sync_mod.api.shell.ShellStateComponent;
 
 import java.lang.reflect.Method;
@@ -16,19 +21,19 @@ public final class TrinketShellStateComponent extends ShellStateComponent {
 
     private static final String NBT_KEY = "trinkets";
 
-    private final NbtCompound trinkets = new NbtCompound();
+    private final CompoundTag trinkets = new CompoundTag();
 
     public TrinketShellStateComponent() {
         super();
     }
 
-    public TrinketShellStateComponent(ServerPlayerEntity player) {
+    public TrinketShellStateComponent(ServerPlayer player) {
         super(player);
-        captureFromPlayer(player, player.getRegistryManager());
+        captureFromPlayer(player, WorldUtil.server(player).registryAccess());
     }
 
     @Override
-    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public CompoundTag writeNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         super.writeNbt(nbt, registryLookup);
         if (!this.trinkets.isEmpty()) {
             nbt.put(NBT_KEY, this.trinkets.copy());
@@ -37,24 +42,24 @@ public final class TrinketShellStateComponent extends ShellStateComponent {
     }
 
     @Override
-    public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public void readNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         super.readNbt(nbt, registryLookup);
         // FIXED: Use copyFrom instead of reassignment
-        this.trinkets.copyFrom(new NbtCompound());
-        if (nbt.contains(NBT_KEY, NbtElement.COMPOUND_TYPE)) {
-            this.trinkets.copyFrom(nbt.getCompound(NBT_KEY));
+        this.trinkets.merge(new CompoundTag());
+        if (Nbt.contains(nbt, NBT_KEY, Tag.TAG_COMPOUND)) {
+            this.trinkets.merge(Nbt.getCompound(nbt, NBT_KEY));
         }
     }
 
     @Override
-    public void applyToPlayer(ServerPlayerEntity player, RegistryWrapper.WrapperLookup registryLookup) {
+    public void applyToPlayer(ServerPlayer player, HolderLookup.Provider registryLookup) {
         super.applyToPlayer(player, registryLookup);
         applyToPlayerTrinkets(player, registryLookup);
     }
 
-    private void captureFromPlayer(ServerPlayerEntity player, RegistryWrapper.WrapperLookup registryLookup) {
+    private void captureFromPlayer(ServerPlayer player, HolderLookup.Provider registryLookup) {
         // FIXED: Use copyFrom instead of reassignment
-        this.trinkets.copyFrom(new NbtCompound());
+        this.trinkets.merge(new CompoundTag());
 
         Optional<Object> componentOpt = TrinketsReflection.getComponent(player);
         if (componentOpt.isEmpty()) {
@@ -74,7 +79,7 @@ public final class TrinketShellStateComponent extends ShellStateComponent {
                 continue;
             }
 
-            NbtCompound groupTag = new NbtCompound();
+            CompoundTag groupTag = new CompoundTag();
 
             for (Map.Entry<?, ?> slotEntry : slots.entrySet()) {
                 String slotName = String.valueOf(slotEntry.getKey());
@@ -88,13 +93,13 @@ public final class TrinketShellStateComponent extends ShellStateComponent {
                     continue;
                 }
 
-                NbtList items = new NbtList();
+                ListTag items = new ListTag();
                 for (int i = 0; i < size; i++) {
                     ItemStack stack = TrinketsReflection.getStack(invObj, i);
                     if (stack == null) {
                         stack = ItemStack.EMPTY;
                     }
-                    items.add(stack.encode(registryLookup));
+                    items.add(ItemStackNbt.save(stack, registryLookup));
                 }
 
                 groupTag.put(slotName, items);
@@ -106,7 +111,7 @@ public final class TrinketShellStateComponent extends ShellStateComponent {
         }
     }
 
-    private void applyToPlayerTrinkets(ServerPlayerEntity player, RegistryWrapper.WrapperLookup registryLookup) {
+    private void applyToPlayerTrinkets(ServerPlayer player, HolderLookup.Provider registryLookup) {
         if (this.trinkets.isEmpty()) {
             return;
         }
@@ -122,25 +127,25 @@ public final class TrinketShellStateComponent extends ShellStateComponent {
             return;
         }
 
-        for (String groupName : this.trinkets.getKeys()) {
+        for (String groupName : this.trinkets./*? if >=1.21.5 {*//*keySet()*//*?} else {*/getAllKeys()/*?}*/) {
             Object groupVal = groups.get(groupName);
             if (!(groupVal instanceof Map<?, ?> slots)) {
                 continue;
             }
 
-            NbtCompound groupTag = this.trinkets.getCompound(groupName);
-            for (String slotName : groupTag.getKeys()) {
+            CompoundTag groupTag = Nbt.getCompound(this.trinkets, groupName);
+            for (String slotName : groupTag./*? if >=1.21.5 {*//*keySet()*//*?} else {*/getAllKeys()/*?}*/) {
                 Object invObj = slots.get(slotName);
                 if (invObj == null) {
                     continue;
                 }
 
-                NbtList items = groupTag.getList(slotName, NbtElement.COMPOUND_TYPE);
+                ListTag items = Nbt.getList(groupTag, slotName, Tag.TAG_COMPOUND);
                 int size = TrinketsReflection.invSize(invObj);
                 int max = Math.min(size, items.size());
 
                 for (int i = 0; i < max; i++) {
-                    ItemStack stack = ItemStack.fromNbtOrEmpty(registryLookup, items.getCompound(i));
+                    ItemStack stack = ItemStackNbt.load(Nbt.getCompound(items, i), registryLookup);
                     TrinketsReflection.setStack(invObj, i, stack);
                 }
             }

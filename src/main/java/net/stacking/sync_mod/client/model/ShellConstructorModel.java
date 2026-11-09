@@ -1,12 +1,13 @@
 package net.stacking.sync_mod.client.model;
 
+import net.stacking.sync_mod.util.client.render.ModelUtil;
 import net.stacking.sync_mod.api.shell.ShellState;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.DoubleBlockProperties;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.world.level.block.DoubleBlockCombiner;
 
 @Environment(EnvType.CLIENT)
 public class ShellConstructorModel extends AbstractShellContainerModel {
@@ -48,18 +49,10 @@ public class ShellConstructorModel extends AbstractShellContainerModel {
     public final ModelPart printerL;
     public final ModelPart printerR;
 
-    private final ModelPart doorLL;
-    private final ModelPart doorLU;
-    private final ModelPart doorRL;
-    private final ModelPart doorRU;
-
     public float buildProgress;
     public boolean showInnerParts;
-    public float sprayerProgress;
 
     public ShellConstructorModel() {
-        super(256, 256);
-
         ModelPart rightPart = this.createRotationTemplate(0, 0.7853982F, 0);
         ModelPart leftPart = this.createRotationTemplate(0, -0.7853982F, 0);
 
@@ -96,72 +89,75 @@ public class ShellConstructorModel extends AbstractShellContainerModel {
         this.pillarBRL = this.addCuboid(BOTTOM, 0, 155, 13, -8, 13, 3, 30, 3);
         this.pillarBRU = this.addCuboid(TOP, 0, 126, 13, -5, 13, 3, 29, 3);
 
-        this.sprayerRMast = this.createCuboid(150, 0, 7.5F, -6, 4, 1, 24, 1, leftPart);
-        this.sprayerGMast = this.createCuboid(150, 0, 0, -6, 7.5F, 1, 24, 1);
-        this.sprayerBMast = this.createCuboid(150, 0, -8.5F, -6, 4, 1, 24, 1, rightPart);
+        this.sprayerR = this.createCuboid(132, 0, -12, -9, -9.55F, 2, 1, 2, rightPart);
+        this.sprayerG = this.createCuboid(132, 0, 10, -9, -9.55F, 2, 1, 2, leftPart);
+        this.sprayerB = this.createCuboid(132, 0, -1, -9, 10.55F, 2, 1, 2);
 
-        this.sprayerR = this.createCuboid(150, 31, 7.5F, 5, 4, 1, 3, 1, leftPart);
-        this.sprayerG = this.createCuboid(150, 31, 0, 5, 7.5F, 1, 3, 1);
-        this.sprayerB = this.createCuboid(150, 31, -8.5F, 5, 4, 1, 3, 1, rightPart);
+        this.sprayerRMast = this.createCuboid(128, 0, -11.5F, -8.5F, -9.5F, 1, 32, 1, rightPart);
+        this.sprayerGMast = this.createCuboid(128, 0, 10.5F, -8.5F, -9.5F, 1, 32, 1, leftPart);
+        this.sprayerBMast = this.createCuboid(128, 0, -0.5F, -8.5F, 11.5F, 1, 32, 1);
 
-        this.printerL = this.createCuboid(150, 25, 11, -6, -4, 1, 5, 2, leftPart);
-        this.printerR = this.createCuboid(150, 25, -12, -6, -4, 1, 5, 2, rightPart);
-
-        this.doorLL = this.createCuboid(150, 0, 0, -6, 7.5F, 1, 24, 1);
-        this.doorLU = this.createCuboid(150, 0, 0, -6, 7.5F, 1, 24, 1);
-        this.doorRL = this.createCuboid(150, 0, 0, -6, 7.5F, 1, 24, 1);
-        this.doorRU = this.createCuboid(150, 0, 0, -6, 7.5F, 1, 24, 1);
+        this.printerL = this.createCuboid(54, 66, 13, 20, 12, 1, 2, 2, leftPart);
+        this.printerR = this.createCuboid(54, 66, -14, 20, 12, 1, 2, 2, rightPart);
     }
 
     @Override
-    protected void renderDoors(DoubleBlockProperties.Type type, MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
-        float angle = (float)(Math.PI / 2) * this.doorOpenProgress;
-        if (type == BOTTOM) {
-            this.doorLL.yaw = -angle;
-            this.doorRL.yaw =  angle;
-            this.doorLL.render(matrices, vertices, light, overlay, color);
-            this.doorRL.render(matrices, vertices, light, overlay, color);
-        } else {
-            this.doorLU.yaw = -angle;
-            this.doorRU.yaw =  angle;
-            this.doorLU.render(matrices, vertices, light, overlay, color);
-            this.doorRU.render(matrices, vertices, light, overlay, color);
-        }
-    }
-
-    @Override
-    public void render(DoubleBlockProperties.Type type, MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+    public void render(DoubleBlockCombiner.BlockType type, PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
         super.render(type, matrices, vertices, light, overlay, color);
-
-        if (type != TOP || !this.showInnerParts) {
+        if (type != BOTTOM || !this.showInnerParts) {
             return;
         }
 
-        // Sprayers descend during construction
-        float sprayerY = -this.sprayerProgress * 22F / 16F;
-        matrices.push();
-        matrices.translate(0, sprayerY, 0);
+        final float MIN_SPRAYER_Y = 22;
+        final float SPRAYER_HEIGHT = -60;
+        final float MIN_PRINTER_Y = 20;
+        final float PRINTER_HEIGHT = -58;
+        final float MAST_HEIGHT = 32;
+        final float MAST_Y = MIN_SPRAYER_Y - MAST_HEIGHT;
+        final float SPRAYER_ACTIVATION_STAGE = 0.9F;
 
-        this.sprayerRMast.render(matrices, vertices, light, overlay, color);
-        this.sprayerGMast.render(matrices, vertices, light, overlay, color);
-        this.sprayerBMast.render(matrices, vertices, light, overlay, color);
+        float printingProgress = this.buildProgress / ShellState.PROGRESS_PRINTING;
+        float paintingProgress = (this.buildProgress - ShellState.PROGRESS_PRINTING) / ShellState.PROGRESS_PAINTING;
 
-        if (this.buildProgress >= ShellState.PROGRESS_PRINTING) {
-            float coloredProgress = (this.buildProgress - ShellState.PROGRESS_PRINTING) / ShellState.PROGRESS_PAINTING;
-            if (coloredProgress < 1F / 3F) {
-                this.sprayerR.render(matrices, vertices, light, overlay, 0xFFFF0000);
-            } else if (coloredProgress < 2F / 3F) {
-                this.sprayerG.render(matrices, vertices, light, overlay, 0xFF00FF00);
-            } else if (coloredProgress <= 1F) {
-                this.sprayerB.render(matrices, vertices, light, overlay, 0xFF0000FF);
-            }
+        float printerY = MIN_PRINTER_Y + PRINTER_HEIGHT * (printingProgress <= 1F ? printingProgress : (1F - paintingProgress));
+        float sprayerY = MIN_SPRAYER_Y + SPRAYER_HEIGHT * (printingProgress < SPRAYER_ACTIVATION_STAGE ? 0 : printingProgress <= 1F ? ((printingProgress - SPRAYER_ACTIVATION_STAGE) / (1F - SPRAYER_ACTIVATION_STAGE)) : (1F - paintingProgress));
+
+        this.renderPrinter(printerY, matrices, vertices, light, overlay, color);
+        this.renderSprayer(sprayerY, true, matrices, vertices, light, overlay, color);
+
+        if (sprayerY < MAST_Y) {
+            this.renderSprayer(MAST_Y, false, matrices, vertices, light, overlay, color);
+        }
+    }
+
+    private void renderSprayer(float y, boolean isFullyVisible, PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+        this.sprayerRMast.y = y;
+        this.sprayerGMast.y = y;
+        this.sprayerBMast.y = y;
+
+        ModelUtil.renderPart(this.sprayerRMast, matrices, vertices, light, overlay, color);
+        ModelUtil.renderPart(this.sprayerGMast, matrices, vertices, light, overlay, color);
+        ModelUtil.renderPart(this.sprayerBMast, matrices, vertices, light, overlay, color);
+
+        if (!isFullyVisible) {
+            return;
         }
 
-        matrices.pop();
+        y -= 0.5F;
+        this.sprayerR.y = y;
+        this.sprayerG.y = y;
+        this.sprayerB.y = y;
 
-        if (this.buildProgress < ShellState.PROGRESS_PRINTING) {
-            this.printerL.render(matrices, vertices, light, overlay, color);
-            this.printerR.render(matrices, vertices, light, overlay, color);
-        }
+        ModelUtil.renderPart(this.sprayerR, matrices, vertices, light, overlay, color);
+        ModelUtil.renderPart(this.sprayerG, matrices, vertices, light, overlay, color);
+        ModelUtil.renderPart(this.sprayerB, matrices, vertices, light, overlay, color);
+    }
+
+    private void renderPrinter(float y, PoseStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
+        this.printerL.y = y;
+        this.printerR.y = y;
+
+        ModelUtil.renderPart(this.printerL, matrices, vertices, light, overlay, color);
+        ModelUtil.renderPart(this.printerR, matrices, vertices, light, overlay, color);
     }
 }

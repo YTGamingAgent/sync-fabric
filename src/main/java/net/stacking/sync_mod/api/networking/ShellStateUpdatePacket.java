@@ -7,16 +7,15 @@ import net.stacking.sync_mod.api.shell.ShellStateUpdateType;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.DyeColor;
 import java.util.UUID;
 
 public class ShellStateUpdatePacket implements ClientPlayerPacket {
@@ -38,28 +37,28 @@ public class ShellStateUpdatePacket implements ClientPlayerPacket {
     }
 
     @Override
-    public Identifier getId() {
+    public ResourceLocation getId() {
         return Sync.locate("packet.shell.state.update");
     }
 
     @Override
-    public void write(PacketByteBuf buffer) {
+    public void write(FriendlyByteBuf buffer) {
         if (this.shellState == null && this.type != ShellStateUpdateType.NONE) {
             throw new IllegalStateException();
         }
 
-        buffer.writeEnumConstant(type);
+        buffer.writeEnum(type);
         switch (type) {
             case ADD:
-                buffer.writeNbt(this.shellState.writeNbt(new NbtCompound()));
+                buffer.writeNbt(this.shellState.writeNbt(new CompoundTag()));
                 break;
 
             case REMOVE:
-                buffer.writeUuid(this.shellState.getUuid());
+                buffer.writeUUID(this.shellState.getUuid());
                 break;
 
             case UPDATE:
-                buffer.writeUuid(this.shellState.getUuid());
+                buffer.writeUUID(this.shellState.getUuid());
                 buffer.writeVarInt((int) (this.shellState.getProgress() * 100));
                 buffer.writeVarInt(this.shellState.getColor() == null ? Byte.MAX_VALUE : this.shellState.getColor().getId());
                 buffer.writeBlockPos(this.shellState.getPos());
@@ -71,20 +70,20 @@ public class ShellStateUpdatePacket implements ClientPlayerPacket {
     }
 
     @Override
-    public void read(PacketByteBuf buffer) {
-        this.type = buffer.readEnumConstant(ShellStateUpdateType.class);
+    public void read(FriendlyByteBuf buffer) {
+        this.type = buffer.readEnum(ShellStateUpdateType.class);
         switch (this.type) {
             case ADD:
                 this.shellState = ShellState.fromNbt(buffer.readNbt());
                 break;
 
             case REMOVE:
-                this.uuid = buffer.readUuid();
+                this.uuid = buffer.readUUID();
                 break;
 
             case UPDATE:
-                this.uuid = buffer.readUuid();
-                this.progress = MathHelper.clamp(buffer.readVarInt() / 100F, 0F, 1F);
+                this.uuid = buffer.readUUID();
+                this.progress = Mth.clamp(buffer.readVarInt() / 100F, 0F, 1F);
                 int colorId = buffer.readVarInt();
                 this.color = colorId < 0 || colorId > 15 ? null : DyeColor.byId(colorId);
                 this.pos = buffer.readBlockPos();
@@ -97,7 +96,7 @@ public class ShellStateUpdatePacket implements ClientPlayerPacket {
 
     @Override
     @Environment(EnvType.CLIENT)
-    public void execute(MinecraftClient client, ClientPlayerEntity player, ClientPlayNetworkHandler handler) {
+    public void execute(Minecraft client, LocalPlayer player, ClientPacketListener handler) {
         Shell shell = (Shell) player;
         if (shell == null) {
             return;

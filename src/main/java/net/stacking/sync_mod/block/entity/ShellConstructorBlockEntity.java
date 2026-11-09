@@ -1,234 +1,165 @@
 package net.stacking.sync_mod.block.entity;
 
-import net.stacking.sync_mod.Sync;
-import net.stacking.sync_mod.api.event.PlayerSyncEvents;
+import net.stacking.sync_mod.util.ChatUtil;
+
+import net.stacking.sync_mod.util.WorldUtil;
+import net.stacking.sync_mod.util.BlockPosUtil;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.api.shell.ShellStateContainer;
+import net.stacking.sync_mod.api.event.PlayerSyncEvents;
 import net.stacking.sync_mod.block.AbstractShellContainerBlock;
 import net.stacking.sync_mod.block.ShellConstructorBlock;
 import net.stacking.sync_mod.config.SyncConfig;
-import net.stacking.sync_mod.util.BlockPosUtil;
-import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Items;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.stacking.sync_mod.Sync;
 import org.jetbrains.annotations.Nullable;
-import software.bernie.geckolib.animatable.GeoBlockEntity;
-import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.animation.AnimatableManager;
-import software.bernie.geckolib.animation.AnimationController;
-import software.bernie.geckolib.animation.PlayState;
-import software.bernie.geckolib.animation.RawAnimation;
-import software.bernie.geckolib.util.GeckoLibUtil;
-import team.reborn.energy.api.EnergyStorage;
 
-@SuppressWarnings({"UnstableApiUsage"})
-public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEntity
-        implements EnergyStorage, GeoBlockEntity {
+import java.util.HashSet;
+import java.util.Set;
 
-    private static final RawAnimation DOOR_OPEN =
-            RawAnimation.begin().thenPlayAndHold("animation.shell_constructor.door_open");
-    private static final RawAnimation DOOR_CLOSE =
-            RawAnimation.begin().thenPlayAndHold("animation.shell_constructor.door_close");
-    private static final RawAnimation SPRAYERS_ACTIVE =
-            RawAnimation.begin().thenLoop("animation.shell_constructor.sprayers_active");
-
-    private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+public class ShellConstructorBlockEntity extends AbstractShellContainerBlockEntity {
+    /**
+     * Build time in seconds, indexed by the number of running treadmills next to the constructor.
+     * Index 0 is used when the constructor is powered by redstone blocks alone.
+     */
+    private static final int[] BUILD_SECONDS_BY_TREADMILL_COUNT = { 180, 180, 120, 60, 30 };
+    private static final int SECONDS_SAVED_PER_REDSTONE_BLOCK = 5;
+    private static final int MIN_BUILD_SECONDS = 1;
 
     public ShellConstructorBlockEntity(BlockPos pos, BlockState state) {
         super(SyncBlockEntities.SHELL_CONSTRUCTOR, pos, state);
     }
 
-    // ── GeoBlockEntity ───────────────────────────────────────────────────────
-
     @Override
-    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "doors", 0, state -> {
-            if (this.hasWorld() && AbstractShellContainerBlock.isOpen(this.getCachedState())) {
-                return state.setAndContinue(DOOR_OPEN);
-            }
-            return state.setAndContinue(DOOR_CLOSE);
-        }));
+    public void onServerTick(Level world, BlockPos pos, BlockState state) {
+        boolean hasPlayerInside = BlockPosUtil.hasPlayerInside(pos, world);
 
-        controllers.add(new AnimationController<>(this, "sprayers", 0, state -> {
-            if (this.shell != null
-                    && this.shell.getProgress() > ShellState.PROGRESS_START
-                    && this.shell.getProgress() < ShellState.PROGRESS_DONE) {
-                return state.setAndContinue(SPRAYERS_ACTIVE);
+        if (this.shell != null && this.shell.getProgress() < ShellState.PROGRESS_DONE && !hasPlayerInside) {
+            int buildTicks = getBuildTicks(world, pos);
+            if (buildTicks > 0) {
+                this.shell.setProgress(this.shell.getProgress() + 1F / buildTicks);
             }
-            return PlayState.STOP;
-        }));
+        }
+
+        super.onServerTick(world, pos, state);
+
+        // Doors open once the shell is finished, and stay open while a player is inside.
+        boolean isShellReady = this.shell != null && this.shell.getProgress() >= ShellState.PROGRESS_DONE;
+        ShellConstructorBlock.setOpen(state, world, pos, isShellReady || (ShellConstructorBlock.isOpen(state) && hasPlayerInside));
+    }
+
+    /**
+     * Works out how long a shell takes to build from what's touching the constructor
+     * (4 sides × lower and upper half = 8 spots):
+     * <ul>
+     *     <li>running treadmills: 1 → 3:00, 2 → 2:00, 3 → 1:00, 4 → 0:30;</li>
+     *     <li>every redstone block takes 5 seconds off (redstone blocks alone start from 3:00).</li>
+     * </ul>
+     *
+     * @return Build time in ticks, or {@code 0} if the constructor has no power.
+     */
+    private static int getBuildTicks(Level world, BlockPos bottomPos) {
+        Set<BlockPos> runningTreadmills = new HashSet<>();
+        int redstoneBlocks = 0;
+
+        for (BlockPos partPos : new BlockPos[] { bottomPos, bottomPos.above() }) {
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos neighborPos = partPos.relative(direction);
+                if (world.getBlockState(neighborPos).is(Blocks.REDSTONE_BLOCK)) {
+                    ++redstoneBlocks;
+                } else if (world.getBlockEntity(neighborPos) instanceof TreadmillBlockEntity treadmill && treadmill.isRunning()) {
+                    runningTreadmills.add(treadmill.getBlockPos());
+                }
+            }
+        }
+
+        if (runningTreadmills.isEmpty() && redstoneBlocks == 0) {
+            return 0;
+        }
+
+        int treadmillCount = Math.min(runningTreadmills.size(), BUILD_SECONDS_BY_TREADMILL_COUNT.length - 1);
+        int seconds = BUILD_SECONDS_BY_TREADMILL_COUNT[treadmillCount] - SECONDS_SAVED_PER_REDSTONE_BLOCK * redstoneBlocks;
+        return Math.max(seconds, MIN_BUILD_SECONDS) * 20;
     }
 
     @Override
-    public AnimatableInstanceCache getAnimatableInstanceCache() {
-        return cache;
+    public InteractionResult onUse(Level world, BlockPos pos, Player player, InteractionHand hand) {
+        if (player.isShiftKeyDown() && this.shell != null) {
+            return this.cancelShellConstruction(world, pos, player);
+        }
+
+        PlayerSyncEvents.ShellConstructionFailureReason failureReason = this.beginShellConstruction(player);
+        if (failureReason == null) {
+            return InteractionResult.SUCCESS;
+        } else {
+            ChatUtil.message(player, failureReason.toText(), true);
+            return InteractionResult.CONSUME;
+        }
     }
 
-    // ── Right-click: initiate shell construction, or sneak to cancel ─────────
+    /**
+     * Sneak + right-click (empty hand): the shell's owner scraps the shell in this constructor.
+     */
+    private InteractionResult cancelShellConstruction(Level world, BlockPos pos, Player player) {
+        if (!player.getUUID().equals(this.shell.getOwnerUuid()) && !player.isCreative()) {
+            ChatUtil.message(player, PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED.toText(), true);
+            return InteractionResult.CONSUME;
+        }
 
-    @Override
-    public ActionResult onUse(World world, BlockPos pos, PlayerEntity player, Hand hand) {
-        if (world.isClient) return ActionResult.SUCCESS;
-
-        // ── Sneak + right-click: cancel and clear any in-progress or completed shell ─
-        // Useful when the shell is stuck (e.g. no energy, or you want a fresh build).
-        if (player.isSneaking() && this.shell != null) {
+        if (world instanceof ServerLevel serverWorld) {
             this.getShellStateManager().remove(this.shell);
-            this.shell = null;
-            this.markDirty();
-            player.sendMessage(Text.translatable("message.sync.shell_constructor.cancelled"), true);
-            return ActionResult.SUCCESS;
+            this.destroyShell(serverWorld, pos);
+            ChatUtil.message(player, Component.translatable("message.sync.shell_constructor.cancelled"), true);
         }
-
-        PlayerSyncEvents.ShellConstructionFailureReason reason = this.beginShellConstruction(player);
-        if (reason != null) {
-            player.sendMessage(reason.toText(), true);
-            return ActionResult.FAIL;
-        }
-        return ActionResult.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 
     @Nullable
-    private PlayerSyncEvents.ShellConstructionFailureReason beginShellConstruction(PlayerEntity player) {
-        if (!(player instanceof ServerPlayerEntity serverPlayer)) {
-            return PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
-        }
-        if (!AbstractShellContainerBlock.isBottom(this.getCachedState())) {
-            return PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
-        }
-        if (this.shell != null) {
-            return PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
+    private PlayerSyncEvents.ShellConstructionFailureReason beginShellConstruction(Player player) {
+        PlayerSyncEvents.ShellConstructionFailureReason failureReason = this.shell == null
+                ? PlayerSyncEvents.ALLOW_SHELL_CONSTRUCTION.invoker().allowShellConstruction(player, this)
+                : PlayerSyncEvents.ShellConstructionFailureReason.OCCUPIED;
+
+        if (failureReason != null) {
+            return failureReason;
         }
 
-        PlayerSyncEvents.ShellConstructionFailureReason eventReason =
-                PlayerSyncEvents.ALLOW_SHELL_CONSTRUCTION.invoker().allowShellConstruction(player, this);
-        if (eventReason != null) return eventReason;
+        if (player instanceof ServerPlayer serverPlayer) {
+            SyncConfig config = Sync.getConfig();
 
-        SyncConfig config = Sync.getConfig();
-        float damage = 0.5f;
-        boolean isCreative = !serverPlayer.interactionManager.getGameMode().isSurvivalLike();
-        boolean isLowOnHealth = (player.getHealth() + player.getAbsorptionAmount()) <= damage;
-        boolean hasTotem = player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING)
-                || player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING);
+            float damage = WorldUtil.server(serverPlayer).isHardcore() ? config.hardcoreFingerstickDamage() : config.fingerstickDamage();
 
-        if (isLowOnHealth && !isCreative && !hasTotem && config.warnPlayerInsteadOfKilling()) {
-            return PlayerSyncEvents.ShellConstructionFailureReason.NOT_ENOUGH_HEALTH;
-        }
-        if (!isCreative) {
-            player.damage(this.world.getDamageSources().sweetBerryBush(), damage);
-        }
+            boolean isCreative = !serverPlayer.gameMode.getGameModeForPlayer().isSurvival();
+            boolean isLowOnHealth = (player.getHealth() + player.getAbsorptionAmount()) <= damage;
+            boolean hasTotemOfUndying = player.getMainHandItem().is(Items.TOTEM_OF_UNDYING) || player.getOffhandItem().is(Items.TOTEM_OF_UNDYING);
+            if (isLowOnHealth && !isCreative && !hasTotemOfUndying && config.warnPlayerInsteadOfKilling()) {
+                return PlayerSyncEvents.ShellConstructionFailureReason.NOT_ENOUGH_HEALTH;
+            }
 
-        this.shell = ShellState.empty(serverPlayer, this.pos);
-        System.out.println("Shell created: " + (this.shell != null) + " at " + this.pos);
-        if (isCreative && config.enableInstantShellConstruction()) {
-            this.shell.setProgress(ShellState.PROGRESS_DONE);
+            //? if >=1.19.4 {
+            player.hurt(WorldUtil.level(player).damageSources().sweetBerryBush(), damage);
+            //?} else
+            /*player.hurt(net.minecraft.world.damagesource.DamageSource.SWEET_BERRY_BUSH, damage);*/
+            this.shell = ShellState.empty(serverPlayer, this.worldPosition);
+            if (isCreative && config.enableInstantShellConstruction()) {
+                this.shell.setProgress(ShellState.PROGRESS_DONE);
+            }
         }
-        this.markDirty();
         return null;
     }
 
-    // ── Server tick: door logic and base progress increment ──────────────────
-
-    @Override
-    public void onServerTick(World world, BlockPos pos, BlockState state) {
-        super.onServerTick(world, pos, state);
-
-        // Add base progress increment each tick to ensure construction completes
-        // in approximately 1200 ticks (~60 seconds) with or without treadmill energy.
-        // This makes construction time consistent regardless of animal type/treadmill output.
-        ShellConstructorBlockEntity bottom =
-                (ShellConstructorBlockEntity) this.getBottomPart().orElse(null);
-        if (bottom != null && bottom.shell != null
-                && bottom.shell.getProgress() > ShellState.PROGRESS_START
-                && bottom.shell.getProgress() < ShellState.PROGRESS_DONE) {
-            float baseIncrement = 1.0f / 1200.0f; // Complete in 1200 ticks
-            bottom.shell.setProgress(bottom.shell.getProgress() + baseIncrement);
-            if (bottom.shell.getProgress() >= ShellState.PROGRESS_DONE) {
-                bottom.shell.setProgress(ShellState.PROGRESS_DONE);
-            }
-        }
-
-        boolean shellComplete = this.shell != null
-                && this.shell.getProgress() >= ShellState.PROGRESS_DONE;
-        boolean playerInside  = BlockPosUtil.hasPlayerInside(pos, world);
-
-        // Doors ONLY open when a shell is complete AND exists.
-        // Once the shell is extracted (this.shell becomes null), doors close.
-        // They don't stay open after extraction.
-        boolean shouldBeOpen = (this.shell != null && shellComplete);
-
-        ShellConstructorBlock.setOpen(state, world, pos, shouldBeOpen);
-    }
-
-    // ── EnergyStorage — progress IS energy ──────────────────────────────────
-    //
-    // No separate energy buffer. The treadmill pushes FE in via insert();
-    // that call converts FE directly to construction progress.
-    // With the default shellConstructorCapacity of 256,000 FE and treadmill
-    // output of 200 FE/tick, construction takes ~1,280 ticks ≈ 64 seconds.
-
-    @Override
-    public long insert(long amount, TransactionContext context) {
-        ShellConstructorBlockEntity bottom =
-                (ShellConstructorBlockEntity) this.getBottomPart().orElse(null);
-        if (bottom == null || bottom.shell == null) return 0;
-        if (BlockPosUtil.hasPlayerInside(bottom.getPos(), bottom.getWorld())) return 0;
-        if (bottom.shell.getProgress() >= ShellState.PROGRESS_DONE) return 0;
-
-        long capacity = Sync.getConfig().shellConstructorCapacity();
-        long missingFE = (long) Math.ceil(
-                (ShellState.PROGRESS_DONE - bottom.shell.getProgress()) * capacity);
-        long accepted = Math.min(amount, missingFE);
-        if (accepted <= 0) return 0;
-
-        context.addCloseCallback((txn, result) -> {
-            if (result.wasCommitted()) {
-                bottom.shell.setProgress(
-                        bottom.shell.getProgress() + (float) accepted / capacity);
-            }
-        });
-        return accepted;
-    }
-
-    @Override
-    public long extract(long maxAmount, TransactionContext context) {
-        return 0;
-    }
-
-    @Override
-    public long getAmount() {
-        ShellConstructorBlockEntity bottom =
-                (ShellConstructorBlockEntity) this.getBottomPart().orElse(null);
-        if (bottom == null || bottom.shell == null) return 0;
-        long cap = Sync.getConfig().shellConstructorCapacity();
-        return (long) (bottom.shell.getProgress() * cap);
-    }
-
-    @Override
-    public long getCapacity() {
-        ShellConstructorBlockEntity bottom =
-                (ShellConstructorBlockEntity) this.getBottomPart().orElse(null);
-        return bottom != null && bottom.shell != null
-                ? Sync.getConfig().shellConstructorCapacity() : 0;
-    }
-
-    @Override public boolean supportsInsertion()  { return true;  }
-    @Override public boolean supportsExtraction() { return false; }
-
     static {
-        ShellStateContainer.LOOKUP.registerForBlockEntity(
-                (x, s) -> x.hasWorld()
-                        && AbstractShellContainerBlock.isBottom(x.getCachedState())
-                        && (s == null || s.equals(x.getShellState())) ? x : null,
-                SyncBlockEntities.SHELL_CONSTRUCTOR);
-        EnergyStorage.SIDED.registerForBlockEntities(
-                (x, __) -> (EnergyStorage) x, SyncBlockEntities.SHELL_CONSTRUCTOR);
+        ShellStateContainer.LOOKUP.registerForBlockEntity((x, s) -> x.hasLevel() && AbstractShellContainerBlock.isBottom(x.getBlockState()) && (s == null || s.equals(x.getShellState())) ? x : null, SyncBlockEntities.SHELL_CONSTRUCTOR);
     }
 }

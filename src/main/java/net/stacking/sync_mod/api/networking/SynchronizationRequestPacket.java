@@ -1,20 +1,21 @@
 package net.stacking.sync_mod.api.networking;
 
+import net.stacking.sync_mod.util.ChatUtil;
+
 import net.stacking.sync_mod.Sync;
 import net.stacking.sync_mod.util.BlockPosUtil;
 import net.stacking.sync_mod.api.shell.ServerShell;
 import net.stacking.sync_mod.api.shell.ShellState;
 import net.stacking.sync_mod.util.WorldUtil;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
-import net.minecraft.network.PacketByteBuf;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayNetworkHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
-
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.world.level.Level;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -34,43 +35,43 @@ public class SynchronizationRequestPacket implements ServerPlayerPacket {
     }
 
     @Override
-    public Identifier getId() {
+    public ResourceLocation getId() {
         return Sync.locate("packet.shell.synchronization.request");
     }
 
     @Override
-    public void write(PacketByteBuf buffer) {
+    public void write(FriendlyByteBuf buffer) {
         if (this.shellUuid == null) {
             buffer.writeBoolean(false);
         } else {
             buffer.writeBoolean(true);
-            buffer.writeUuid(this.shellUuid);
+            buffer.writeUUID(this.shellUuid);
         }
     }
 
     @Override
-    public void read(PacketByteBuf buffer) {
-        this.shellUuid = buffer.readBoolean() ? buffer.readUuid() : null;
+    public void read(FriendlyByteBuf buffer) {
+        this.shellUuid = buffer.readBoolean() ? buffer.readUUID() : null;
     }
 
     @Override
-    public void execute(MinecraftServer server, ServerPlayerEntity player, ServerPlayNetworkHandler handler) {
+    public void execute(MinecraftServer server, ServerPlayer player, ServerGamePacketListenerImpl handler) {
         ServerShell shell = (ServerShell)player;
         ShellState state = shell.getShellStateByUuid(this.shellUuid);
 
-        BlockPos currentPos = player.getBlockPos();
-        World currentWorld = player.getWorld();
-        Identifier currentWorldId = WorldUtil.getId(currentWorld);
-        Direction currentFacing = BlockPosUtil.getHorizontalFacing(currentPos, currentWorld).orElse(player.getHorizontalFacing().getOpposite());
+        BlockPos currentPos = player.blockPosition();
+        Level currentWorld = WorldUtil.level(player);
+        ResourceLocation currentWorldId = WorldUtil.getId(currentWorld);
+        Direction currentFacing = BlockPosUtil.getHorizontalFacing(currentPos, currentWorld).orElse(player.getDirection().getOpposite());
 
         shell.sync(state).ifLeft(storedState -> {
             Objects.requireNonNull(state);
-            Identifier targetWorldId = state.getWorld();
+            ResourceLocation targetWorldId = state.getWorld();
             BlockPos targetPos = state.getPos();
-            Direction targetFacing = player.getHorizontalFacing().getOpposite();
+            Direction targetFacing = player.getDirection().getOpposite();
             new SynchronizationResponsePacket(currentWorldId, currentPos, currentFacing, targetWorldId, targetPos, targetFacing, storedState).send(player);
         }).ifRight(failureReason -> {
-            player.sendMessage(failureReason.toText(), false);
+            ChatUtil.message(player, failureReason.toText(), false);
             new SynchronizationResponsePacket(currentWorldId, currentPos, currentFacing, currentWorldId, currentPos, currentFacing, null).send(player);
         });
     }

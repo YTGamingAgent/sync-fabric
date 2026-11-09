@@ -1,5 +1,6 @@
 package net.stacking.sync_mod.api.shell;
 
+import net.stacking.sync_mod.util.nbt.Nbt;
 import net.stacking.sync_mod.entity.ShellEntity;
 import net.stacking.sync_mod.item.SimpleInventory;
 import net.stacking.sync_mod.util.WorldUtil;
@@ -9,23 +10,22 @@ import net.stacking.sync_mod.util.nbt.NbtSerializerFactory;
 import net.stacking.sync_mod.util.nbt.NbtSerializerFactoryBuilder;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.entity.ExperienceOrbEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.GameMode;
-import net.minecraft.world.World;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.UUID;
@@ -59,7 +59,7 @@ public class ShellState {
     private float experienceProgress;
     private int totalExperience;
 
-    private Identifier world;
+    private ResourceLocation world;
     private BlockPos pos;
 
     private final NbtSerializer<ShellState> serializer;
@@ -85,7 +85,7 @@ public class ShellState {
     }
 
     public void setProgress(float progress) {
-        this.progress = MathHelper.clamp(progress, PROGRESS_START, PROGRESS_DONE);
+        this.progress = Mth.clamp(progress, PROGRESS_START, PROGRESS_DONE);
     }
 
     public DyeColor getColor() {
@@ -128,11 +128,11 @@ public class ShellState {
         this.health = health;
     }
 
-    public GameMode getGameMode() {
-        return GameMode.byId(this.gameMode);
+    public GameType getGameMode() {
+        return GameType.byId(this.gameMode);
     }
 
-    public void setGameMode(GameMode gameMode) {
+    public void setGameMode(GameType gameMode) {
         this.gameMode = gameMode.getId();
     }
 
@@ -196,11 +196,11 @@ public class ShellState {
         this.totalExperience = totalExperience;
     }
 
-    public Identifier getWorld() {
+    public ResourceLocation getWorld() {
         return this.world;
     }
 
-    public void setWorld(Identifier world) {
+    public void setWorld(ResourceLocation world) {
         this.world = world;
     }
 
@@ -212,135 +212,189 @@ public class ShellState {
         this.pos = pos;
     }
 
-    public static ShellState empty(ServerPlayerEntity player, BlockPos pos) {
+    /**
+     * Creates empty shell of the specified player.
+     *
+     * @param player The player.
+     * @param pos Position of the shell.
+     * @return Empty shell of the specified player.
+     */
+    public static ShellState empty(ServerPlayer player, BlockPos pos) {
+        return empty(player, pos, null);
+    }
+
+    /**
+     * Creates empty shell of the specified player.
+     *
+     * @param player The player.
+     * @param pos Position of the shell.
+     * @param color Color of the shell.
+     * @return Empty shell of the specified player.
+     */
+    public static ShellState empty(ServerPlayer player, BlockPos pos, DyeColor color) {
+        return create(player, pos, color, PROGRESS_START, true, false);
+    }
+
+    /**
+     * Creates shell that is a full copy of the specified player.
+     *
+     * @param player The player.
+     * @param pos Position of the shell.
+     * @return Shell that is a full copy of the specified player.
+     */
+    public static ShellState of(ServerPlayer player, BlockPos pos) {
+        return of(player, pos, null);
+    }
+
+    /**
+     * Creates shell that is a full copy of the specified player.
+     *
+     * @param player The player.
+     * @param pos Position of the shell.
+     * @param color Color of the shell.
+     * @return Shell that is a full copy of the specified player.
+     */
+    public static ShellState of(ServerPlayer player, BlockPos pos, DyeColor color) {
+        return create(player, pos, color, PROGRESS_DONE, ((Shell)player).isArtificial(), true);
+    }
+
+    private static ShellState create(ServerPlayer player, BlockPos pos, DyeColor color, float progress, boolean isArtificial, boolean copyPlayerState) {
         ShellState shell = new ShellState();
-        shell.ownerUuid = player.getGameProfile().getId();
-        shell.ownerName = player.getGameProfile().getName();
-        shell.health = player.getMaxHealth();
-        shell.gameMode = player.interactionManager.getGameMode().getId();
-        shell.component = ShellStateComponent.of(player);
-        shell.world = WorldUtil.getId(player.getWorld());
+
+        shell.uuid = UUID.randomUUID();
+        shell.progress = progress;
+        shell.color = color;
+        shell.isArtificial = isArtificial;
+
+        shell.ownerUuid = player.getUUID();
+        shell.ownerName = player.getName().getString();
+        shell.gameMode = player.gameMode.getGameModeForPlayer().getId();
+        shell.inventory = new SimpleInventory();
+
+        if (copyPlayerState) {
+            shell.health = player.getHealth();
+            shell.inventory.clone(player.getInventory());
+            shell.component = ShellStateComponent.of(player);
+
+            shell.foodLevel = player.getFoodData().getFoodLevel();
+            shell.saturationLevel = player.getFoodData().getSaturationLevel();
+            //? if >=1.21.2 {
+            /*shell.exhaustion = player.getFoodData().exhaustionLevel;
+            *///?} else
+            shell.exhaustion = player.getFoodData().getExhaustionLevel();
+
+            shell.experienceLevel = player.experienceLevel;
+            shell.experienceProgress = player.experienceProgress;
+            shell.totalExperience = player.totalExperience;
+        } else {
+            shell.health = player.getMaxHealth();
+            shell.component = ShellStateComponent.empty();
+            shell.foodLevel = 20;
+            shell.saturationLevel = 5;
+        }
+
+        shell.world = WorldUtil.getId(WorldUtil.level(player));
         shell.pos = pos;
+
         return shell;
     }
 
-    public static ShellState copy(ServerPlayerEntity player, BlockPos pos) {
-        ShellState shell = new ShellState();
-        shell.progress = PROGRESS_DONE;
-        shell.ownerUuid = player.getGameProfile().getId();
-        shell.ownerName = player.getGameProfile().getName();
-        shell.health = player.getHealth();
-        shell.gameMode = player.interactionManager.getGameMode().getId();
-        shell.inventory.clone(player.getInventory());
-        shell.component = ShellStateComponent.of(player);
-        shell.foodLevel = player.getHungerManager().getFoodLevel();
-        shell.saturationLevel = player.getHungerManager().getSaturationLevel();
-        shell.exhaustion = player.getHungerManager().getExhaustion();
-        shell.experienceLevel = player.experienceLevel;
-        shell.experienceProgress = player.experienceProgress;
-        shell.totalExperience = player.totalExperience;
-        shell.world = WorldUtil.getId(player.getWorld());
-        shell.pos = pos;
-
-        return shell;
-    }
-
-    public void dropInventory(ServerWorld world) {
+    public void dropInventory(ServerLevel world) {
         this.dropInventory(world, this.pos);
     }
 
-    public void dropInventory(ServerWorld world, BlockPos pos) {
+    public void dropInventory(ServerLevel world, BlockPos pos) {
         Stream
                 .of(this.inventory.main, this.inventory.armor, this.inventory.offHand, this.component.getItems())
                 .flatMap(Collection::stream)
                 .forEach(x -> this.dropItemStack(world, pos, x));
     }
 
-    public void dropXp(ServerWorld world) {
+    public void dropXp(ServerLevel world) {
         this.dropXp(world, this.pos);
     }
 
-    public void dropXp(ServerWorld world, BlockPos pos) {
+    public void dropXp(ServerLevel world, BlockPos pos) {
         int xp = Math.min(this.experienceLevel * 7, 100) + this.component.getXp();
-        Vec3d vecPos = new Vec3d(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
-        ExperienceOrbEntity.spawn(world, vecPos, xp);
+        Vec3 vecPos = new Vec3(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+        ExperienceOrb.award(world, vecPos, xp);
     }
 
-    public void drop(ServerWorld world) {
+    public void drop(ServerLevel world) {
         this.drop(world, this.pos);
     }
 
-    public void drop(ServerWorld world, BlockPos pos) {
+    public void drop(ServerLevel world, BlockPos pos) {
         this.dropInventory(world, pos);
         this.dropXp(world, pos);
     }
 
-    private void dropItemStack(World world, BlockPos pos, ItemStack stack) {
+    private void dropItemStack(Level world, BlockPos pos, ItemStack stack) {
         if (stack.isEmpty()) {
             return;
         }
 
         ItemEntity item = new ItemEntity(world, pos.getX(), pos.getY(), pos.getZ(), stack);
-        item.setPickupDelay(40);
+        item.setPickUpDelay(40);
 
-        float h = world.random.nextFloat() * 0.5F;
-        float v = world.random.nextFloat() * 2 * Radians.R_PI;
-        item.setVelocity(-MathHelper.sin(v) * h, 0.2, MathHelper.cos(v) * h);
-        world.spawnEntity(item);
+        float h = world.getRandom().nextFloat() * 0.5F;
+        float v = world.getRandom().nextFloat() * 2 * Radians.R_PI;
+        item.setDeltaMovement(-Mth.sin(v) * h, 0.2, Mth.cos(v) * h);
+        world.addFreshEntity(item);
     }
 
     // Registry-aware NBT methods for 1.21
-    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public CompoundTag writeNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         this.serializer.writeNbt(nbt);
 
         if (this.inventory != null) {
-            NbtList inventoryList = new NbtList();
+            ListTag inventoryList = new ListTag();
             this.inventory.writeNbt(inventoryList, registryLookup);
             nbt.put("inventory", inventoryList);
         }
 
         if (this.component != null) {
-            nbt.put("components", this.component.writeNbt(new NbtCompound(), registryLookup));
+            nbt.put("components", this.component.writeNbt(new CompoundTag(), registryLookup));
         }
 
         return nbt;
     }
 
-    public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public void readNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         this.serializer.readNbt(nbt);
 
-        if (nbt.contains("inventory", NbtElement.LIST_TYPE)) {
+        if (Nbt.contains(nbt, "inventory", Tag.TAG_LIST)) {
             this.inventory = new SimpleInventory();
-            this.inventory.readNbt(nbt.getList("inventory", NbtElement.COMPOUND_TYPE), registryLookup);
+            this.inventory.readNbt(Nbt.getList(nbt, "inventory", Tag.TAG_COMPOUND), registryLookup);
         } else if (this.inventory == null) {
             this.inventory = new SimpleInventory();
         }
 
-        if (nbt.contains("components", NbtElement.COMPOUND_TYPE)) {
+        if (Nbt.contains(nbt, "components", Tag.TAG_COMPOUND)) {
             this.component = ShellStateComponent.empty();
-            this.component.readNbt(nbt.getCompound("components"), registryLookup);
+            this.component.readNbt(Nbt.getCompound(nbt, "components"), registryLookup);
         } else if (this.component == null) {
             this.component = ShellStateComponent.empty();
         }
     }
 
-    public static ShellState fromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public static ShellState fromNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         ShellState state = new ShellState();
         state.readNbt(nbt, registryLookup);
         return state;
     }
 
     // Backwards-compatible non-registry methods
-    public NbtCompound writeNbt(NbtCompound nbt) {
+    public CompoundTag writeNbt(CompoundTag nbt) {
         this.serializer.writeNbt(nbt);
         return nbt;
     }
 
-    public void readNbt(NbtCompound nbt) {
+    public void readNbt(CompoundTag nbt) {
         this.serializer.readNbt(nbt);
     }
 
-    public static ShellState fromNbt(NbtCompound nbt) {
+    public static ShellState fromNbt(CompoundTag nbt) {
         ShellState state = new ShellState();
         state.readNbt(nbt);
         return state;
@@ -383,7 +437,7 @@ public class ShellState {
                 .add(int.class, "experienceLevel", s -> s.experienceLevel, (s, v) -> s.experienceLevel = v)
                 .add(float.class, "experienceProgress", s -> s.experienceProgress, (s, v) -> s.experienceProgress = v)
                 .add(int.class, "totalExperience", s -> s.totalExperience, (s, v) -> s.totalExperience = v)
-                .add(Identifier.class, "world", s -> s.world, (s, v) -> s.world = v)
+                .add(ResourceLocation.class, "world", s -> s.world, (s, v) -> s.world = v)
                 .add(BlockPos.class, "pos", s -> s.pos, (s, v) -> s.pos = v)
                 .build();
     }

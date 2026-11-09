@@ -1,9 +1,9 @@
 package net.stacking.sync_mod.util.math;
 
-import net.minecraft.util.math.MathConstants;
+import com.mojang.math.Constants;
 
 public final class Radians {
-    public static final float R_PI = MathConstants.PI;
+    public static final float R_PI = Constants.PI;
     public static final float R_2_PI = 2F * R_PI;
 
     public static final float R_PI_128 = R_PI / 128;

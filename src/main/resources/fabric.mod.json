@@ -23,15 +23,13 @@
     ]
   },
   "mixins": [
-    "sync.compat.mixins.json",
     "sync.mixins.json"
   ],
   "accessWidener": "sync.accesswidener",
   "depends": {
-    "fabricloader": ">=${loader_version}",
+    "fabricloader": ">=${loader}",
     "fabric-api": "*",
-    "minecraft": ">=${minecraft_version}",
-    "java": ">=21",
-    "geckolib": "*"
+    "minecraft": "${minecraft}",
+    "java": ">=${java}"
   }
 }

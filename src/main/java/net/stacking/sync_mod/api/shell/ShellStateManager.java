@@ -1,11 +1,11 @@
 package net.stacking.sync_mod.api.shell;
 
-import net.minecraft.util.Pair;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.UUID;
 import java.util.stream.Stream;
+import net.stacking.sync_mod.util.Tuple;
 
 /**
  * The shell state manager is an interface that allows applications
@@ -105,7 +105,7 @@ public interface ShellStateManager {
      * @param owner UUID of the shell owner.
      * @return A list of pending updates by owner uuid.
      */
-    Collection<Pair<ShellStateUpdateType, ShellState>> peekPendingUpdates(UUID owner);
+    Collection<Tuple<ShellStateUpdateType, ShellState>> peekPendingUpdates(UUID owner);
 
     /**
      * Clears all pending updates for the given shell owner.
@@ -119,8 +119,8 @@ public interface ShellStateManager {
      * @param owner UUID of the shell owner.
      * @return A list of pending updates by owner uuid.
      */
-    default Collection<Pair<ShellStateUpdateType, ShellState>> popPendingUpdates(UUID owner) {
-        Collection<Pair<ShellStateUpdateType, ShellState>> updates = this.peekPendingUpdates(owner);
+    default Collection<Tuple<ShellStateUpdateType, ShellState>> popPendingUpdates(UUID owner) {
+        Collection<Tuple<ShellStateUpdateType, ShellState>> updates = this.peekPendingUpdates(owner);
         this.clearPendingUpdates(owner);
         return updates;
     }
